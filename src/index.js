@@ -8,6 +8,7 @@ const { checkDisneyPrices } = require('./scrapers/disney');
 const { checkUniversalPrices } = require('./scrapers/universal');
 const { checkAndSendAlerts } = require('./alerts/email');
 const db = require('./db/client');
+const { ensureDatabaseSchema } = require('./db/init');
 
 const app = express();
 app.use(express.json());
@@ -255,22 +256,32 @@ cron.schedule(SCHEDULE_2, () => {
 //  STARTUP
 // ====================================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  logger.info('');
-  logger.info('🌴 Orlando Tracker iniciado!');
-  logger.info(`   Dashboard: http://localhost:${PORT}`);
-  logger.info(`   Cron 1: ${SCHEDULE_1} (UTC)`);
-  logger.info(`   Cron 2: ${SCHEDULE_2} (UTC)`);
-  logger.info(`   Alerta passagens: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
-  logger.info(`   Alerta Disney: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
-  logger.info(`   Alerta Universal: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
-  logger.info('');
-});
 
-// Run once on startup (useful for the first test)
-if (process.env.RUN_ON_START === 'true') {
-  setTimeout(() => {
-    logger.info('🚀 Executando verificação inicial...');
-    runCheck().catch(err => logger.error('Erro na verificação inicial:', err.message));
-  }, 5000);
+async function start() {
+  await ensureDatabaseSchema(db, { log: true });
+
+  app.listen(PORT, () => {
+    logger.info('');
+    logger.info('🌴 Orlando Tracker iniciado!');
+    logger.info(`   Dashboard: http://localhost:${PORT}`);
+    logger.info(`   Cron 1: ${SCHEDULE_1} (UTC)`);
+    logger.info(`   Cron 2: ${SCHEDULE_2} (UTC)`);
+    logger.info(`   Alerta passagens: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
+    logger.info(`   Alerta Disney: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
+    logger.info(`   Alerta Universal: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
+    logger.info('');
+  });
+
+  // Run once on startup (useful for the first test)
+  if (process.env.RUN_ON_START === 'true') {
+    setTimeout(() => {
+      logger.info('🚀 Executando verificação inicial...');
+      runCheck().catch(err => logger.error('Erro na verificação inicial:', err.message));
+    }, 5000);
+  }
 }
+
+start().catch(err => {
+  logger.error(`Fatal startup error: ${err.message}`);
+  process.exit(1);
+});

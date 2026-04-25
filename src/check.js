@@ -5,9 +5,12 @@ const { checkFlightPrices } = require('./scrapers/flights');
 const { checkDisneyPrices } = require('./scrapers/disney');
 const { checkUniversalPrices } = require('./scrapers/universal');
 const { checkAndSendAlerts } = require('./alerts/email');
+const db = require('./db/client');
+const { ensureDatabaseSchema } = require('./db/init');
 
 async function main() {
    logger.info('🔍 Starting manual check...');
+   await ensureDatabaseSchema(db, { log: true });
 
    const [flights, disney, universal] = await Promise.allSettled([
      checkFlightPrices(),

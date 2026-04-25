@@ -1,0 +1,70 @@
+// src/db/init.js
+const logger = require('../utils/logger');
+
+async function ensureDatabaseSchema(queryable, options = {}) {
+  const { log = false } = options;
+
+  if (log) logger.info('Creating tables in the database...');
+
+  await queryable.query(`
+    CREATE TABLE IF NOT EXISTS flight_prices (
+      id SERIAL PRIMARY KEY,
+      checked_at TIMESTAMPTZ DEFAULT NOW(),
+      airline TEXT,
+      origin TEXT,
+      destination TEXT,
+      departure_date DATE,
+      return_date DATE,
+      trip_days INTEGER,
+      price_usd NUMERIC(10,2),
+      price_brl NUMERIC(10,2),
+      num_passengers INTEGER,
+      total_brl NUMERIC(10,2),
+      stops TEXT,
+      source_url TEXT,
+      raw_data JSONB
+    );
+  `);
+
+  await queryable.query(`
+    CREATE TABLE IF NOT EXISTS park_prices (
+      id SERIAL PRIMARY KEY,
+      checked_at TIMESTAMPTZ DEFAULT NOW(),
+      park_brand TEXT,
+      park_names TEXT[],
+      ticket_type TEXT,
+      promotion_name TEXT,
+      days INTEGER,
+      price_usd NUMERIC(10,2),
+      price_brl NUMERIC(10,2),
+      num_tickets INTEGER,
+      total_brl NUMERIC(10,2),
+      valid_dates TEXT,
+      source_url TEXT,
+      raw_data JSONB
+    );
+  `);
+
+  await queryable.query(`
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id SERIAL PRIMARY KEY,
+      sent_at TIMESTAMPTZ DEFAULT NOW(),
+      alert_type TEXT,
+      threshold_brl NUMERIC(10,2),
+      actual_brl NUMERIC(10,2),
+      details JSONB
+    );
+  `);
+
+  await queryable.query(`
+    CREATE TABLE IF NOT EXISTS exchange_rates (
+      id SERIAL PRIMARY KEY,
+      checked_at TIMESTAMPTZ DEFAULT NOW(),
+      usd_to_brl NUMERIC(8,4)
+    );
+  `);
+
+  if (log) logger.info('✅ Database configured successfully!');
+}
+
+module.exports = { ensureDatabaseSchema };

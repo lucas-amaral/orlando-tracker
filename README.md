@@ -30,7 +30,7 @@ Runs for free in the cloud and sends me an email when prices drop below your thr
 5. Go to **Settings → Database**
 6. Scroll to **"Connection string"** and copy the URI in this format:
    ```
-   postgresql://postgres:[YOUR_PASSWORD]@db.[ID].supabase.co:5432/postgres
+   postgresql://postgres:[PASSWORD]@db.[ID].supabase.co:5432/postgres
    ```
 7. Save this string — you'll use it in Render
 
@@ -38,13 +38,13 @@ Runs for free in the cloud and sends me an email when prices drop below your thr
 
 ## Step 2 — Configure Gmail for sending emails
 
-1. Go to your Gmail account at https://myaccount.google.com
+1. Go to Gmail account at https://myaccount.google.com
 2. Enable **2-Step Verification** (required for app passwords)
 3. Go to **Security → App passwords**
 4. Select "Other (custom name)" → type `Orlando Tracker`
 5. Click **Generate**
 6. Copy the 16-character password generated (e.g., `abcd efgh ijkl mnop`)
-7. Save it — this is your `GMAIL_APP_PASSWORD`
+7. Save it — this is `GMAIL_APP_PASSWORD`
 
 ---
 
@@ -72,7 +72,7 @@ git push -u origin main
 
 1. Go to https://render.com and create an account
 2. Click **"New +"** → **"Web Service"**
-3. Connect your GitHub account and select the `orlando-tracker` repository
+3. Connect GitHub account and select the `orlando-tracker` repository
 4. Configure:
    - **Name:** `orlando-tracker`
    - **Runtime:** `Node`
@@ -81,17 +81,17 @@ git push -u origin main
    - **Plan:** `Free`
 5. Scroll to **"Environment Variables"** and add:
 
-| Variable | Value |
-|---|---|
-| `DATABASE_URL` | Supabase URL copied in Step 1 |
-| `GMAIL_USER` | your_email@gmail.com |
-| `GMAIL_APP_PASSWORD` | App password from Step 2 |
-| `ALERT_EMAIL_TO` | your_email@gmail.com (or another) |
-| `FLIGHT_ALERT_THRESHOLD` | `14000` (alert if 4 pax < R$14,000) |
+| Variable | Value                                 |
+|---|---------------------------------------|
+| `DATABASE_URL` | Supabase URL copied in Step 1         |
+| `GMAIL_USER` | email@gmail.com                       |
+| `GMAIL_APP_PASSWORD` | App password from Step 2              |
+| `ALERT_EMAIL_TO` | email@gmail.com (or another)          |
+| `FLIGHT_ALERT_THRESHOLD` | `14000` (alert if 4 pax < R$14,000)   |
 | `DISNEY_ALERT_THRESHOLD` | `9000` (alert if 4 tickets < R$9,000) |
 | `UNIVERSAL_ALERT_THRESHOLD` | `7000` (alert if 4 tickets < R$7,000) |
-| `RUN_ON_START` | `true` |
-| `NUM_PASSENGERS` | `4` |
+| `RUN_ON_START` | `true`                                |
+| `NUM_PASSENGERS` | `4`                                   |
 
 6. Click **"Create Web Service"**
 7. Wait for the deploy (~3 minutes)
@@ -103,7 +103,7 @@ git push -u origin main
 After deployment, open the Render shell (or run locally with your variables):
 
 **Option A — Via Render Shell:**
-1. In the Render dashboard, open your service
+1. In the Render dashboard, open the service
 2. Click **"Shell"**
 3. Type: `node src/db/setup.js`
 
@@ -124,7 +124,7 @@ npm run setup-db
 
 ## Access the dashboard
 
-After deployment, your dashboard will be at:
+After deployment, the dashboard will be at:
 ```
 https://orlando-tracker.onrender.com
 ```
