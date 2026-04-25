@@ -8,7 +8,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 async function setupDatabase() {
   const client = await pool.connect();
   try {
-    logger.info('Criando tabelas no banco de dados...');
+    logger.info('Creating tables in the database...');
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS flight_prices (
