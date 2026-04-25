@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: orlando-tracker
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: RUN_ON_START
+        value: "true"
+      # As variáveis abaixo você preenche no painel do Render:
+      # DATABASE_URL, GMAIL_USER, GMAIL_APP_PASSWORD, ALERT_EMAIL_TO
+      # FLIGHT_ALERT_THRESHOLD, DISNEY_ALERT_THRESHOLD, UNIVERSAL_ALERT_THRESHOLD
