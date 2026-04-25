@@ -1,6 +1,6 @@
 // src/scrapers/flights.js
-// Fetches POA → MCO flights using Google Flights via SerpAPI (100 free req/month)
-// or directly through the public Google Flights endpoint
+// Busca passagens POA → MCO usando Google Flights via SerpAPI (100 req/mês grátis)
+// ou diretamente pelo endpoint público do Google Flights
 const axios = require('axios');
 const db = require('../db/client');
 const logger = require('../utils/logger');
@@ -14,7 +14,7 @@ const CONFIG = {
   maxDays: parseInt(process.env.MAX_TRIP_DAYS) || 18,
 };
 
-// Generate all date combinations within the Jan-Feb 2027 range
+// Gera todas as combinações de datas dentro do intervalo Jan-Fev 2027
 function generateDateCombinations() {
   const combinations = [];
   const months = ['2027-01', '2027-02'];
@@ -25,7 +25,7 @@ function generateDateCombinations() {
     
     for (let day = 1; day <= daysInMonth; day++) {
       const depDate = new Date(year, mon - 1, day);
-      if (depDate.getDay() === 2 || depDate.getDay() === 4) { // Tue or Thu = cheaper
+      if (depDate.getDay() === 2 || depDate.getDay() === 4) { // Ter ou Qui = mais baratos
         for (let duration = CONFIG.minDays; duration <= CONFIG.maxDays; duration += 3) {
           const retDate = new Date(depDate);
           retDate.setDate(retDate.getDate() + duration);
@@ -38,10 +38,10 @@ function generateDateCombinations() {
       }
     }
   }
-  return combinations.slice(0, 8); // Limit to avoid exhausting requests
+  return combinations.slice(0, 8); // Limita para não esgotar requisições
 }
 
-// Method 1: Kayak unofficial endpoint (light scraping via headers)
+// Método 1: Kayak unofficial endpoint (scraping leve via headers)
 async function scrapeKayak(departure, returnDate) {
   try {
     const url = `https://www.kayak.com.br/flights/${CONFIG.origin}-${CONFIG.destination}/${departure}/${returnDate}/${CONFIG.passengers}adults`;
@@ -53,7 +53,7 @@ async function scrapeKayak(departure, returnDate) {
       },
       timeout: 15000,
     });
-    // Kayak returns structured JSON data embedded in the HTML
+    // Kayak retorna dados estruturados em JSON embutido no HTML
     const match = res.data.match(/"price":"([\d.]+)"/g);
     if (match && match.length > 0) {
       const prices = match.map(m => parseFloat(m.match(/([\d.]+)/)[0])).filter(p => p > 50);
@@ -65,10 +65,10 @@ async function scrapeKayak(departure, returnDate) {
   }
 }
 
-// Method 2: Google Flights via Serpapi (100 free calls/month, no key = demo)
+// Método 2: Google Flights via Serpapi (100 calls/mês grátis, sem chave = demo)
 async function scrapeGoogleFlights(departure, returnDate) {
   try {
-    // Public Google Flights endpoint (no API key, limited)
+    // Endpoint público do Google Flights (sem chave API, limitado)
     const params = new URLSearchParams({
       engine: 'google_flights',
       departure_id: CONFIG.origin,
@@ -80,7 +80,7 @@ async function scrapeGoogleFlights(departure, returnDate) {
       hl: 'pt',
       gl: 'br',
     });
-    // Use the free SerpApi endpoint (demo, no auth, limited real data)
+    // Usar o endpoint grátis do SerpApi (demo, sem autenticação, dados reais limitados)
     const res = await axios.get(`https://serpapi.com/search?${params}`, {
       timeout: 15000,
     });
@@ -99,7 +99,7 @@ async function scrapeGoogleFlights(departure, returnDate) {
   }
 }
 
-// Method 3: Mundi.com.br — public search endpoint
+// Método 3: Mundi.com.br — endpoint público de busca
 async function scrapeMundi(departure, returnDate) {
   try {
     const res = await axios.get('https://www.mundi.com.br/api/v1/flights/search', {
@@ -133,7 +133,7 @@ async function scrapeMundi(departure, returnDate) {
   }
 }
 
-// Main function: tries multiple sources
+// Função principal: tenta múltiplas fontes
 async function checkFlightPrices() {
   logger.info('✈️  Iniciando busca de passagens POA → MCO...');
   const rate = await getUsdToBrl();
@@ -145,10 +145,10 @@ async function checkFlightPrices() {
     
     let data = null;
     
-    // Try Mundi first (more scraping-friendly)
+    // Tenta Mundi primeiro (mais amigável para scraping)
     data = await scrapeMundi(combo.departure, combo.returnDate);
     
-    // Fallback to Google Flights
+    // Fallback para Google Flights
     if (!data) {
       const price = await scrapeGoogleFlights(combo.departure, combo.returnDate);
       if (price) data = { price, airline: 'Combinado', stops: 1 };
@@ -171,7 +171,7 @@ async function checkFlightPrices() {
       };
       results.push(result);
 
-      // Save to the database
+      // Salva no banco
       await db.query(`
         INSERT INTO flight_prices 
           (airline, origin, destination, departure_date, return_date, trip_days,
@@ -185,7 +185,7 @@ async function checkFlightPrices() {
       ]);
     }
 
-    // Pause between requests to avoid being blocked
+    // Pausa entre requisições para não ser bloqueado
     await new Promise(r => setTimeout(r, 2500));
   }
 

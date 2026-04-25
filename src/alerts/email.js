@@ -20,42 +20,60 @@ function formatBRL(value) {
   }).format(value);
 }
 
+function buildFlightLink(departure, returnDate, passengers) {
+  const dep = departure.replace(/-/g, '');
+  const ret = returnDate.replace(/-/g, '');
+  return `https://www.kayak.com.br/flights/POA-MCO/${dep}/${ret}/${passengers}adults`;
+}
+
 function buildFlightEmailHtml(flights, threshold) {
-  const rows = flights.map(f => `
+  const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const rows = flights.map(f => {
+    const link = buildFlightLink(f.departure_date, f.return_date, f.num_passengers || 4);
+    return `
     <tr style="border-bottom:1px solid #eee">
       <td style="padding:10px">${f.departure_date}</td>
       <td style="padding:10px">${f.return_date}</td>
       <td style="padding:10px">${f.trip_days} dias</td>
       <td style="padding:10px">${f.airline}</td>
+      <td style="padding:10px">${f.stops === '0' ? 'Direto' : (f.stops || '1') + ' escala'}</td>
       <td style="padding:10px">${formatBRL(f.price_brl)}/pax</td>
-      <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(f.total_brl)} total</td>
+      <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(f.total_brl)}</td>
+      <td style="padding:10px"><a href="${link}" style="color:#1d4ed8;font-size:12px">Ver voo →</a></td>
     </tr>
-  `).join('');
+  `}).join('');
 
   return `
-    <div style="font-family:sans-serif;max-width:700px;margin:0 auto">
+    <div style="font-family:sans-serif;max-width:760px;margin:0 auto">
       <div style="background:#1e3a5f;padding:24px;border-radius:8px 8px 0 0">
         <h1 style="color:#fff;margin:0;font-size:22px">✈️ Alerta de Passagem!</h1>
-        <p style="color:#93c5fd;margin:8px 0 0">POA → MCO | ${flights.length} opção(ões) abaixo de ${formatBRL(threshold)}</p>
+        <p style="color:#93c5fd;margin:8px 0 0">POA → MCO | ${flights.length} opção(ões) abaixo de ${formatBRL(threshold)} | 4 pessoas ida+volta</p>
+        <p style="color:#bfdbfe;margin:4px 0 0;font-size:12px">Verificado em: ${now}</p>
       </div>
       <div style="background:#f8fafc;padding:24px;border-radius:0 0 8px 8px;border:1px solid #e2e8f0">
-        <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#e2e8f0">
               <th style="padding:10px;text-align:left">Ida</th>
               <th style="padding:10px;text-align:left">Volta</th>
               <th style="padding:10px;text-align:left">Duração</th>
               <th style="padding:10px;text-align:left">Cia</th>
+              <th style="padding:10px;text-align:left">Escalas</th>
               <th style="padding:10px;text-align:left">Por pessoa</th>
               <th style="padding:10px;text-align:left">Total (4 pax)</th>
+              <th style="padding:10px;text-align:left">Link</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <p style="margin-top:20px;font-size:13px;color:#64748b">
-          🔗 <a href="https://www.mundi.com.br/voos/POA-MCO">Verificar disponibilidade no Mundi</a> |
-          <a href="https://www.kayak.com.br/flights/POA-MCO">Kayak</a>
-        </p>
+        <div style="margin-top:20px;padding:16px;background:#eff6ff;border-radius:8px;font-size:13px">
+          <strong>🔗 Buscar manualmente:</strong><br>
+          <a href="https://www.mundi.com.br/voos/POA-MCO" style="color:#1d4ed8">Mundi</a> ·
+          <a href="https://www.kayak.com.br/flights/POA-MCO" style="color:#1d4ed8">Kayak</a> ·
+          <a href="https://www.decolar.com/passagens-aereas/poa/orl" style="color:#1d4ed8">Decolar</a> ·
+          <a href="https://passagens.voeazul.com.br" style="color:#1d4ed8">Azul</a> ·
+          <a href="https://www.latamairlines.com/br/pt" style="color:#1d4ed8">LATAM</a>
+        </div>
       </div>
     </div>
   `;
@@ -64,124 +82,133 @@ function buildFlightEmailHtml(flights, threshold) {
 function buildParkEmailHtml(parks, brand, threshold) {
   const emoji = brand === 'disney' ? '🏰' : '🎬';
   const brandName = brand === 'disney' ? 'Disney' : 'Universal';
-  
+  const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const officialLink = brand === 'disney'
+    ? 'https://disneyworld.disney.go.com/pt-br/admission/tickets/'
+    : 'https://www.universalorlando.com/web/en/us/tickets';
+
   const rows = parks.map(p => `
     <tr style="border-bottom:1px solid #eee">
       <td style="padding:10px">${p.park_names?.join(', ') || brandName}</td>
       <td style="padding:10px">
-        <span style="background:${p.ticket_type === 'promoção' ? '#dcfce7' : '#fef9c3'};
-          padding:3px 8px;border-radius:12px;font-size:12px;color:#166534">
+        <span style="background:${p.ticket_type === 'promoção' ? '#dcfce7' : p.ticket_type === 'estimado' ? '#fef9c3' : '#eff6ff'};
+          padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600">
           ${p.ticket_type === 'promoção' ? '🎉 ' : ''}${p.ticket_type}
         </span>
       </td>
-      <td style="padding:10px">${p.promotion_name || '—'}</td>
+      <td style="padding:10px;font-size:12px">${p.promotion_name || '—'}</td>
       <td style="padding:10px">${p.days} dias</td>
+      <td style="padding:10px">${p.valid_dates || '—'}</td>
       <td style="padding:10px">${formatBRL(p.price_brl)}/ingresso</td>
-      <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(p.total_brl)} total</td>
+      <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(p.total_brl)}</td>
+      <td style="padding:10px"><a href="${p.source_url || officialLink}" style="color:#1d4ed8;font-size:12px">Ver →</a></td>
     </tr>
   `).join('');
 
   return `
-    <div style="font-family:sans-serif;max-width:700px;margin:0 auto">
+    <div style="font-family:sans-serif;max-width:800px;margin:0 auto">
       <div style="background:${brand === 'disney' ? '#1d4ed8' : '#7c3aed'};padding:24px;border-radius:8px 8px 0 0">
         <h1 style="color:#fff;margin:0;font-size:22px">${emoji} Alerta de Ingresso ${brandName}!</h1>
         <p style="color:#c7d2fe;margin:8px 0 0">${parks.length} opção(ões) abaixo de ${formatBRL(threshold)} — 4 ingressos</p>
+        <p style="color:#ddd6fe;margin:4px 0 0;font-size:12px">Verificado em: ${now}</p>
       </div>
       <div style="background:#f8fafc;padding:24px;border-radius:0 0 8px 8px;border:1px solid #e2e8f0">
-        <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#e2e8f0">
               <th style="padding:10px;text-align:left">Parques</th>
               <th style="padding:10px;text-align:left">Tipo</th>
               <th style="padding:10px;text-align:left">Promoção</th>
               <th style="padding:10px;text-align:left">Dias</th>
+              <th style="padding:10px;text-align:left">Validade</th>
               <th style="padding:10px;text-align:left">Por ingresso</th>
               <th style="padding:10px;text-align:left">Total (4 pax)</th>
+              <th style="padding:10px;text-align:left">Link</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <p style="margin-top:20px;font-size:13px;color:#64748b">
-          🔗 <a href="https://orlandoparabrasileiros.com/ingressos-parques-orlando/">Orlando Para Brasileiros</a> |
-          ${brand === 'disney'
-            ? '<a href="https://disneyworld.disney.go.com/pt-br/admission/tickets/">Site Oficial Disney</a>'
-            : '<a href="https://www.universalorlando.com/web/en/us/tickets">Site Oficial Universal</a>'}
-        </p>
+        <div style="margin-top:20px;padding:16px;background:#f5f3ff;border-radius:8px;font-size:13px">
+          <strong>🔗 Comprar com melhor preço em BRL (sem IOF):</strong><br>
+          <a href="https://orlandoparabrasileiros.com/ingressos-parques-orlando/" style="color:#7c3aed">Orlando Para Brasileiros</a> ·
+          <a href="https://www.decolar.com/atracoes-turisticas/d-DY_ORL" style="color:#7c3aed">Decolar</a> ·
+          <a href="${officialLink}" style="color:#7c3aed">Site Oficial ${brandName}</a>
+        </div>
       </div>
     </div>
   `;
 }
 
 async function checkAndSendAlerts(flightResults, disneyResults, universalResults) {
-   const flightThreshold = parseFloat(process.env.FLIGHT_ALERT_THRESHOLD) || 14000;
-   const disneyThreshold = parseFloat(process.env.DISNEY_ALERT_THRESHOLD) || 9000;
-   const universalThreshold = parseFloat(process.env.UNIVERSAL_ALERT_THRESHOLD) || 7000;
+  const flightThreshold = parseFloat(process.env.FLIGHT_ALERT_THRESHOLD) || 14000;
+  const disneyThreshold = parseFloat(process.env.DISNEY_ALERT_THRESHOLD) || 9000;
+  const universalThreshold = parseFloat(process.env.UNIVERSAL_ALERT_THRESHOLD) || 7000;
 
-   const alertsToSend = [];
+  const alertsToSend = [];
 
-   // Check flights
-   const cheapFlights = flightResults.filter(f => f.total_brl < flightThreshold);
-   if (cheapFlights.length > 0) {
-     alertsToSend.push({
-       type: 'flight',
-       subject: `✈️ ALERT: Flights POA→MCO below ${formatBRL(flightThreshold)}! (${cheapFlights.length} option)`,
-       html: buildFlightEmailHtml(cheapFlights, flightThreshold),
-       threshold: flightThreshold,
-       actual: Math.min(...cheapFlights.map(f => f.total_brl)),
-     });
-   }
+  // Verifica passagens
+  const cheapFlights = flightResults.filter(f => f.total_brl < flightThreshold);
+  if (cheapFlights.length > 0) {
+    alertsToSend.push({
+      type: 'flight',
+      subject: `✈️ ALERTA: Passagens POA→MCO abaixo de ${formatBRL(flightThreshold)}! (${cheapFlights.length} opção)`,
+      html: buildFlightEmailHtml(cheapFlights, flightThreshold),
+      threshold: flightThreshold,
+      actual: Math.min(...cheapFlights.map(f => f.total_brl)),
+    });
+  }
 
-   // Check Disney
-   const cheapDisney = disneyResults.filter(d => d.total_brl < disneyThreshold);
-   if (cheapDisney.length > 0) {
-     alertsToSend.push({
-       type: 'disney',
-       subject: `🏰 ALERT: Disney tickets below ${formatBRL(disneyThreshold)}! (4 pax, 4 parks)`,
-       html: buildParkEmailHtml(cheapDisney, 'disney', disneyThreshold),
-       threshold: disneyThreshold,
-       actual: Math.min(...cheapDisney.map(d => d.total_brl)),
-     });
-   }
+  // Verifica Disney
+  const cheapDisney = disneyResults.filter(d => d.total_brl < disneyThreshold);
+  if (cheapDisney.length > 0) {
+    alertsToSend.push({
+      type: 'disney',
+      subject: `🏰 ALERTA: Ingressos Disney abaixo de ${formatBRL(disneyThreshold)}! (4 pax, 4 parques)`,
+      html: buildParkEmailHtml(cheapDisney, 'disney', disneyThreshold),
+      threshold: disneyThreshold,
+      actual: Math.min(...cheapDisney.map(d => d.total_brl)),
+    });
+  }
 
-   // Check Universal
-   const cheapUniversal = universalResults.filter(u => u.total_brl < universalThreshold);
-   if (cheapUniversal.length > 0) {
-     alertsToSend.push({
-       type: 'universal',
-       subject: `🎬 ALERT: Universal tickets below ${formatBRL(universalThreshold)}! (4 pax, 3 parks)`,
-       html: buildParkEmailHtml(cheapUniversal, 'universal', universalThreshold),
-       threshold: universalThreshold,
-       actual: Math.min(...cheapUniversal.map(u => u.total_brl)),
-     });
-   }
+  // Verifica Universal
+  const cheapUniversal = universalResults.filter(u => u.total_brl < universalThreshold);
+  if (cheapUniversal.length > 0) {
+    alertsToSend.push({
+      type: 'universal',
+      subject: `🎬 ALERTA: Ingressos Universal abaixo de ${formatBRL(universalThreshold)}! (4 pax, 3 parques)`,
+      html: buildParkEmailHtml(cheapUniversal, 'universal', universalThreshold),
+      threshold: universalThreshold,
+      actual: Math.min(...cheapUniversal.map(u => u.total_brl)),
+    });
+  }
 
-   // Send emails
-   for (const alert of alertsToSend) {
-     try {
-       await transporter.sendMail({
-         from: `"Orlando Tracker 🌴" <${process.env.GMAIL_USER}>`,
-         to: process.env.ALERT_EMAIL_TO,
-         subject: alert.subject,
-         html: alert.html,
-       });
+  // Envia emails
+  for (const alert of alertsToSend) {
+    try {
+      await transporter.sendMail({
+        from: `"Orlando Tracker 🌴" <${process.env.GMAIL_USER}>`,
+        to: process.env.ALERT_EMAIL_TO,
+        subject: alert.subject,
+        html: alert.html,
+      });
+      
+      // Registra no banco
+      await db.query(
+        'INSERT INTO price_alerts (alert_type, threshold_brl, actual_brl) VALUES ($1,$2,$3)',
+        [alert.type, alert.threshold, alert.actual]
+      );
+      
+      logger.info(`📧 Email de alerta enviado: ${alert.type}`);
+    } catch (err) {
+      logger.error(`Falha ao enviar email de alerta (${alert.type}): ${err.message}`);
+    }
+  }
 
-       // Log in database
-       await db.query(
-         'INSERT INTO price_alerts (alert_type, threshold_brl, actual_brl) VALUES ($1,$2,$3)',
-         [alert.type, alert.threshold, alert.actual]
-       );
-
-       logger.info(`📧 Alert email sent: ${alert.type}`);
-     } catch (err) {
-       logger.error(`Failed to send alert email (${alert.type}): ${err.message}`);
-     }
-   }
-
-   if (alertsToSend.length === 0) {
-     logger.info('📧 No alerts triggered — prices above configured thresholds');
-   }
-
-   return alertsToSend.length;
+  if (alertsToSend.length === 0) {
+    logger.info('📧 Nenhum alerta disparado — preços acima dos limites configurados');
+  }
+  
+  return alertsToSend.length;
 }
 
 module.exports = { checkAndSendAlerts };

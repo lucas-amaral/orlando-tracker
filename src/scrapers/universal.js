@@ -1,5 +1,5 @@
 // src/scrapers/universal.js
-// Fetches prices for the 3 Universal parks (Studios, Islands of Adventure, Epic Universe)
+// Busca preços dos 3 parques da Universal (Studios, Islands of Adventure, Epic Universe)
 const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db/client');
@@ -8,7 +8,7 @@ const { getUsdToBrl } = require('../utils/exchange');
 
 const PARKS = ['Universal Studios Florida', 'Islands of Adventure', 'Epic Universe'];
 
-// Source 1: Orlando Para Brasileiros — promotions for Brazilians
+// Fonte 1: Orlando Para Brasileiros — promoções para brasileiros
 async function scrapeOrlandoParaBrasileiros() {
   try {
     const res = await axios.get('https://orlandoparabrasileiros.com/ingressos-parques-orlando/', {
@@ -24,14 +24,14 @@ async function scrapeOrlandoParaBrasileiros() {
 
     const results = [];
 
-    // Check the "3 Park Explorer" Universal promotion
+    // Verifica promoção "3 Park Explorer" Universal
     const has3Park = text.toLowerCase().includes('3 park explorer') ||
                      text.toLowerCase().includes('3-park');
     
-    // Check for Epic Universe (new park in 2025)
+    // Verifica Epic Universe (novo parque 2025)
     const hasEpic = text.toLowerCase().includes('epic universe');
 
-    // Look for BRL prices
+    // Busca preços em BRL
     const pricePattern = /R\$\s*([\d.,]+)/g;
     const prices = [];
     let match;
@@ -40,7 +40,7 @@ async function scrapeOrlandoParaBrasileiros() {
       if (price > 800 && price < 20000) prices.push(price);
     }
 
-    // Look for a specific Universal package price
+    // Procura preço específico do pacote Universal
     const universalBlock = text.substring(
       Math.max(0, text.toLowerCase().indexOf('universal') - 100),
       text.toLowerCase().indexOf('universal') + 2000
@@ -82,7 +82,7 @@ async function scrapeOrlandoParaBrasileiros() {
   }
 }
 
-// Source 2: Official Universal site
+// Fonte 2: Site oficial Universal
 async function scrapeUniversalOfficial(rate) {
   try {
     const res = await axios.get('https://www.universalorlando.com/web/en/us/tickets', {
@@ -95,7 +95,7 @@ async function scrapeUniversalOfficial(rate) {
     const $ = cheerio.load(res.data);
     const text = $('body').text();
 
-    // Look for USD prices
+    // Procura preços em USD
     const usdMatches = text.match(/\$\s*([\d,]+\.?[\d]*)/g) || [];
     const prices = usdMatches
       .map(m => parseFloat(m.replace(/[^\d.]/g, '')))
@@ -126,10 +126,10 @@ async function scrapeUniversalOfficial(rate) {
   }
 }
 
-// Fallback with historical estimates
+// Fallback com estimativas históricas
 function getFallbackPrices(rate) {
-  // 3 Park Explorer + Epic Universe, low season Jan/Feb
-  const PRICE_USD_3PARKS = 524; // based on 2026 data
+  // 3 Park Explorer + Epic Universe, baixa temporada Jan/Fev
+  const PRICE_USD_3PARKS = 524; // baseado em dados de 2026
   const priceBrl = PRICE_USD_3PARKS * rate;
   
   return [{

@@ -1,7 +1,7 @@
 // src/scrapers/disney.js
-// Fetches prices for the 4 Disney parks for Jan/Feb 2027
-// Primary source: orlandoparabrasileiros.com (prices in BRL, active promotions)
-// Secondary source: official Disney site
+// Busca preços dos 4 parques da Disney para Jan/Fev 2027
+// Fonte primária: orlandoparabrasileiros.com (preços em BRL, promoções ativas)
+// Fonte secundária: site oficial Disney
 const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db/client');
@@ -10,7 +10,7 @@ const { getUsdToBrl } = require('../utils/exchange');
 
 const PARKS = ['Magic Kingdom', 'EPCOT', 'Hollywood Studios', 'Animal Kingdom'];
 
-// Source 1: Orlando Para Brasileiros — checks the "4-Park Magic Ticket" promotion
+// Fonte 1: Orlando Para Brasileiros — verifica promoção "4-Park Magic Ticket"
 async function scrapeOrlandoParaBrasileiros() {
   try {
     const res = await axios.get('https://orlandoparabrasileiros.com/ingressos-parques-orlando/', {
@@ -24,7 +24,7 @@ async function scrapeOrlandoParaBrasileiros() {
     const $ = cheerio.load(res.data);
     const results = [];
 
-    // Look for BRL prices listed on the page
+    // Busca preços em BRL listados na página
     const pricePattern = /R\$\s*([\d.,]+)/g;
     const pageText = $('body').text();
     const prices = [];
@@ -34,12 +34,12 @@ async function scrapeOrlandoParaBrasileiros() {
       if (price > 500 && price < 20000) prices.push(price);
     }
 
-    // Check the "4-Park Magic Ticket" promotion (4 parks for the price of 3)
+    // Verifica promoção "4-Park Magic Ticket" (4 parques pelo preço de 3)
     const hasPromo = pageText.toLowerCase().includes('4-park magic') ||
                      pageText.toLowerCase().includes('4 parques pelo preço de 3') ||
                      pageText.toLowerCase().includes('magic disney');
     
-    // Look for discounted 4-day prices
+    // Procura por preços específicos de 4 dias com desconto
     const promoMatch = pageText.match(/4.Park.*?R\$\s*([\d.,]+)/i) ||
                        pageText.match(/4 parques.*?R\$\s*([\d.,]+)/i);
     
@@ -53,7 +53,7 @@ async function scrapeOrlandoParaBrasileiros() {
         promotion_name: hasPromo ? '4-Park Magic Ticket (4 parques / 3 dias)' : null,
         days: 4,
         price_brl: bestPrice,
-        total_brl: bestPrice * 4, // 4 people
+        total_brl: bestPrice * 4, // 4 pessoas
         num_tickets: 4,
         park_names: PARKS,
         valid_dates: 'Jan–Fev 2027 (verificar disponibilidade)',
@@ -69,7 +69,7 @@ async function scrapeOrlandoParaBrasileiros() {
   }
 }
 
-// Source 2: Official Disney site — prices in converted USD
+// Fonte 2: Site oficial Disney — preços em USD convertidos
 async function scrapeDisneyOfficial(rate) {
   try {
     const res = await axios.get('https://disneyworld.disney.go.com/pt-br/admission/tickets/', {
@@ -82,10 +82,10 @@ async function scrapeDisneyOfficial(rate) {
     const $ = cheerio.load(res.data);
     const results = [];
 
-    // Look for USD or BRL prices on the page
+    // Busca preços em USD ou BRL na página
     const text = $('body').text();
     
-    // Current promo: "Enjoy multiple parks from USD 436"
+    // Promo vigente: "Aproveite vários Parques a partir de USD 436"
     const usdMatch = text.match(/USD\s*([\d,]+)/gi);
     if (usdMatch && usdMatch.length > 0) {
       const prices = usdMatch
@@ -119,11 +119,11 @@ async function scrapeDisneyOfficial(rate) {
   }
 }
 
-// Source 3: Fallback with estimated prices based on historical data
+// Fonte 3: Fallback com preços estimados baseados em dados históricos
 function getFallbackPrices(rate) {
-  // Based on Jan 2026 data + an estimated 5% increase for 2027
-  // Source: research performed in April 2026
-  const PRICE_USD_4DAYS_ADULT = 400; // ~average low-season Jan/Feb price
+  // Baseado em dados de Jan 2026 + 5% de aumento estimado para 2027
+  // Fonte: pesquisa realizada em Abril/2026
+  const PRICE_USD_4DAYS_ADULT = 400; // ~média baixa temporada jan/fev
   const priceBrl = PRICE_USD_4DAYS_ADULT * rate;
   
   return [{
@@ -159,7 +159,7 @@ async function checkDisneyPrices() {
     allResults = getFallbackPrices(rate);
   }
 
-  // Save to the database
+  // Salva no banco
   for (const r of allResults) {
     await db.query(`
       INSERT INTO park_prices 

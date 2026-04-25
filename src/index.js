@@ -1,4 +1,4 @@
-// src/index.js — Main entry point
+// src/index.js — Ponto de entrada principal
 require('dotenv').config();
 const cron = require('node-cron');
 const express = require('express');
@@ -8,38 +8,37 @@ const { checkDisneyPrices } = require('./scrapers/disney');
 const { checkUniversalPrices } = require('./scrapers/universal');
 const { checkAndSendAlerts } = require('./alerts/email');
 const db = require('./db/client');
-const { ensureDatabaseSchema } = require('./db/init');
 
 const app = express();
 app.use(express.json());
 
 // ====================================================
-//  WEB DASHBOARD — http://localhost:3000
+//  DASHBOARD WEB — http://localhost:3000
 // ====================================================
 app.get('/', async (req, res) => {
   try {
-    // Latest flights
+    // Últimas passagens
     const flights = await db.query(`
       SELECT * FROM flight_prices
       ORDER BY total_brl ASC, checked_at DESC
       LIMIT 20
     `);
-    // Latest tickets
+    // Últimos ingressos
     const parks = await db.query(`
       SELECT * FROM park_prices
       ORDER BY park_brand, total_brl ASC, checked_at DESC
       LIMIT 20
     `);
-    // Latest exchange rate
+    // Última cotação
     const rate = await db.query(`
       SELECT usd_to_brl, checked_at FROM exchange_rates
       ORDER BY checked_at DESC LIMIT 1
     `);
-    // Last check
+    // Último check
     const lastCheck = await db.query(`
       SELECT MAX(checked_at) as last_check FROM flight_prices
     `);
-    // Sent alerts
+    // Alertas enviados
     const alerts = await db.query(`
       SELECT * FROM price_alerts ORDER BY sent_at DESC LIMIT 10
     `);
@@ -48,31 +47,38 @@ app.get('/', async (req, res) => {
     const formatDate = d => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
     const formatDay = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR') : '—';
 
-    const flightRows = flights.rows.map(f => `
+    const flightRows = flights.rows.map(f => {
+      const dep = f.departure_date?.toISOString?.().split('T')[0] || f.departure_date;
+      const ret = f.return_date?.toISOString?.().split('T')[0] || f.return_date;
+      const link = `https://www.kayak.com.br/flights/POA-MCO/${dep?.replace(/-/g,'')}/${ret?.replace(/-/g,'')}/${CONFIG_PASSENGERS}adults`;
+      return `
       <tr>
         <td>${formatDay(f.departure_date)}</td>
         <td>${formatDay(f.return_date)}</td>
         <td>${f.trip_days}d</td>
         <td>${f.airline}</td>
-        <td>${f.stops === '0' ? 'Direto' : f.stops + ' escala'}</td>
+        <td>${f.stops === '0' ? 'Direto' : (f.stops || '1') + ' escala'}</td>
         <td>${formatBRL(f.price_brl)}/pax</td>
         <td class="highlight">${formatBRL(f.total_brl)}</td>
+        <td class="small"><a href="${link}" target="_blank" style="color:#1d4ed8">Buscar →</a></td>
         <td class="small">${formatDate(f.checked_at)}</td>
       </tr>
-    `).join('');
+    `}).join('');
 
     const parkRows = parks.rows.map(p => `
       <tr>
         <td>${p.park_brand === 'disney' ? '🏰 Disney' : '🎬 Universal'}</td>
         <td>
           <span class="badge ${p.ticket_type === 'promoção' ? 'badge-promo' : p.ticket_type === 'estimado' ? 'badge-est' : 'badge-normal'}">
-            ${p.ticket_type}
+            ${p.ticket_type === 'promoção' ? '🎉 ' : ''}${p.ticket_type}
           </span>
         </td>
         <td class="small">${p.promotion_name || '—'}</td>
         <td>${p.days}d</td>
+        <td class="small">${p.valid_dates || '—'}</td>
         <td>${formatBRL(p.price_brl)}/ing.</td>
         <td class="highlight">${formatBRL(p.total_brl)}</td>
+        <td class="small"><a href="${p.source_url || '#'}" target="_blank" style="color:#1d4ed8">Ver →</a></td>
         <td class="small">${formatDate(p.checked_at)}</td>
       </tr>
     `).join('');
@@ -153,39 +159,39 @@ app.get('/', async (req, res) => {
     </div>
   </div>
 
-   <div class="thresholds">
-     <div class="threshold">✈️ Flights alert: <span>${formatBRL(process.env.FLIGHT_ALERT_THRESHOLD)}</span></div>
-     <div class="threshold">🏰 Disney alert: <span>${formatBRL(process.env.DISNEY_ALERT_THRESHOLD)}</span></div>
-     <div class="threshold">🎬 Universal alert: <span>${formatBRL(process.env.UNIVERSAL_ALERT_THRESHOLD)}</span></div>
-   </div>
+  <div class="thresholds">
+    <div class="threshold">✈️ Alerta passagens: <span>${formatBRL(process.env.FLIGHT_ALERT_THRESHOLD)}</span></div>
+    <div class="threshold">🏰 Alerta Disney: <span>${formatBRL(process.env.DISNEY_ALERT_THRESHOLD)}</span></div>
+    <div class="threshold">🎬 Alerta Universal: <span>${formatBRL(process.env.UNIVERSAL_ALERT_THRESHOLD)}</span></div>
+  </div>
 
-   <a class="btn" href="/run-check">▶ Run check now</a>
+  <a class="btn" href="/run-check">▶ Executar verificação agora</a>
 
-   <div class="section">
-     <h2>✈️ Flights (cheapest first)</h2>
-     ${flights.rows.length > 0 ? `
-     <table>
-       <thead><tr><th>Departure</th><th>Return</th><th>Duration</th><th>Airline</th><th>Stops</th><th>Per pax</th><th>Total (4 pax)</th><th>Checked at</th></tr></thead>
-       <tbody>${flightRows}</tbody>
-     </table>` : '<div class="empty">No data yet — run a check</div>'}
-   </div>
+  <div class="section">
+    <h2>✈️ Passagens aéreas (mais baratas primeiro)</h2>
+    ${flights.rows.length > 0 ? `
+    <table>
+      <thead><tr><th>Ida</th><th>Volta</th><th>Dur.</th><th>Cia</th><th>Escalas</th><th>Por pax</th><th>Total (4 pax)</th><th>Link</th><th>Verificado em</th></tr></thead>
+      <tbody>${flightRows}</tbody>
+    </table>` : '<div class="empty">Ainda sem dados — execute uma verificação</div>'}
+  </div>
 
-   <div class="section">
-     <h2>🎡 Park tickets (cheapest first)</h2>
-     ${parks.rows.length > 0 ? `
-     <table>
-       <thead><tr><th>Brand</th><th>Type</th><th>Promotion</th><th>Days</th><th>Per ticket</th><th>Total (4 pax)</th><th>Checked at</th></tr></thead>
-       <tbody>${parkRows}</tbody>
-     </table>` : '<div class="empty">No data yet — run a check</div>'}
-   </div>
+  <div class="section">
+    <h2>🎡 Ingressos parques (mais baratos primeiro)</h2>
+    ${parks.rows.length > 0 ? `
+    <table>
+      <thead><tr><th>Marca</th><th>Tipo</th><th>Promoção</th><th>Dias</th><th>Validade</th><th>Por ingresso</th><th>Total (4 pax)</th><th>Link</th><th>Verificado em</th></tr></thead>
+      <tbody>${parkRows}</tbody>
+    </table>` : '<div class="empty">Ainda sem dados — execute uma verificação</div>'}
+  </div>
 
-   <div class="section">
-     <h2>🔔 Sent alerts history</h2>
-     ${alerts.rows.length > 0 ? `
-     <table>
-       <thead><tr><th>Date</th><th>Type</th><th>Threshold</th><th>Price found</th></tr></thead>
-       <tbody>${alertRows}</tbody>
-     </table>` : '<div class="empty">No alerts sent yet</div>'}
+  <div class="section">
+    <h2>🔔 Histórico de alertas enviados</h2>
+    ${alerts.rows.length > 0 ? `
+    <table>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Limite</th><th>Preço encontrado</th></tr></thead>
+      <tbody>${alertRows}</tbody>
+    </table>` : '<div class="empty">Nenhum alerta disparado ainda</div>'}
   </div>
 </body>
 </html>`);
@@ -195,18 +201,18 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Endpoint to trigger a manual check
+// Endpoint para acionar verificação manual
 app.get('/run-check', async (req, res) => {
   logger.info('🔄 Verificação manual acionada via web');
   res.redirect('/?check=triggered');
   runCheck().catch(err => logger.error('Erro na verificação manual:', err.message));
 });
 
-// Health check (so Render does not shut down the service)
+// Health check (para o Render não derrubar o serviço)
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
 // ====================================================
-//  MAIN CHECK FUNCTION
+//  FUNÇÃO PRINCIPAL DE VERIFICAÇÃO
 // ====================================================
 async function runCheck() {
   logger.info('');
@@ -239,8 +245,8 @@ async function runCheck() {
 // ====================================================
 //  CRON JOBS
 // ====================================================
-const SCHEDULE_1 = process.env.CRON_SCHEDULE_1 || '0 10 * * *'; // 7 AM Brasilia time
-const SCHEDULE_2 = process.env.CRON_SCHEDULE_2 || '0 22 * * *'; // 7 PM Brasilia time
+const SCHEDULE_1 = process.env.CRON_SCHEDULE_1 || '0 10 * * *'; // 7h Brasília
+const SCHEDULE_2 = process.env.CRON_SCHEDULE_2 || '0 22 * * *'; // 19h Brasília
 
 cron.schedule(SCHEDULE_1, () => {
   logger.info('⏰ Cron job 1 acionado');
@@ -256,32 +262,22 @@ cron.schedule(SCHEDULE_2, () => {
 //  STARTUP
 // ====================================================
 const PORT = process.env.PORT || 3000;
-
-async function start() {
-  await ensureDatabaseSchema(db, { log: true });
-
-  app.listen(PORT, () => {
-    logger.info('');
-    logger.info('🌴 Orlando Tracker iniciado!');
-    logger.info(`   Dashboard: http://localhost:${PORT}`);
-    logger.info(`   Cron 1: ${SCHEDULE_1} (UTC)`);
-    logger.info(`   Cron 2: ${SCHEDULE_2} (UTC)`);
-    logger.info(`   Alerta passagens: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
-    logger.info(`   Alerta Disney: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
-    logger.info(`   Alerta Universal: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
-    logger.info('');
-  });
-
-  // Run once on startup (useful for the first test)
-  if (process.env.RUN_ON_START === 'true') {
-    setTimeout(() => {
-      logger.info('🚀 Executando verificação inicial...');
-      runCheck().catch(err => logger.error('Erro na verificação inicial:', err.message));
-    }, 5000);
-  }
-}
-
-start().catch(err => {
-  logger.error(`Fatal startup error: ${err.message}`);
-  process.exit(1);
+app.listen(PORT, () => {
+  logger.info('');
+  logger.info('🌴 Orlando Tracker iniciado!');
+  logger.info(`   Dashboard: http://localhost:${PORT}`);
+  logger.info(`   Cron 1: ${SCHEDULE_1} (UTC)`);
+  logger.info(`   Cron 2: ${SCHEDULE_2} (UTC)`);
+  logger.info(`   Alerta passagens: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
+  logger.info(`   Alerta Disney: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
+  logger.info(`   Alerta Universal: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
+  logger.info('');
 });
+
+// Executa uma vez ao iniciar (útil para primeiro teste)
+if (process.env.RUN_ON_START === 'true') {
+  setTimeout(() => {
+    logger.info('🚀 Executando verificação inicial...');
+    runCheck().catch(err => logger.error('Erro na verificação inicial:', err.message));
+  }, 5000);
+}
