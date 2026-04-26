@@ -1,4 +1,4 @@
-// src/utils/logger.js
+// src/utils/logger.js — Application logger
 const winston = require('winston');
 
 const logger = winston.createLogger({

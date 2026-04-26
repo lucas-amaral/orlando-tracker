@@ -1,9 +1,9 @@
-// src/db/client.js
+// src/db/client.js — PostgreSQL connection pool
 require('dotenv').config();
-const { Pool } = require('pg');
 const dns = require('dns');
+const { Pool } = require('pg');
 
-// Força IPv4 — o plano free do Render não suporta IPv6
+// Force IPv4 — Render free tier does not support IPv6
 dns.setDefaultResultOrder('ipv4first');
 
 const pool = new Pool({

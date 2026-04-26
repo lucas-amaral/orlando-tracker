@@ -1,7 +1,7 @@
 // src/scrapers/disney.js
-// Busca preços dos 4 parques da Disney para Jan/Fev 2027
-// Fonte primária: orlandoparabrasileiros.com (preços em BRL, promoções ativas)
-// Fonte secundária: site oficial Disney
+// Fetches ticket prices for all 4 Disney parks for Jan/Feb 2027
+// Primary source: orlandoparabrasileiros.com (prices in BRL, active promotions)
+// Secondary source: official Disney website
 const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db/client');
@@ -10,7 +10,7 @@ const { getUsdToBrl } = require('../utils/exchange');
 
 const PARKS = ['Magic Kingdom', 'EPCOT', 'Hollywood Studios', 'Animal Kingdom'];
 
-// Fonte 1: Orlando Para Brasileiros — verifica promoção "4-Park Magic Ticket"
+// Source 1: Orlando Para Brasileiros — checks for "4-Park Magic Ticket" promotion
 async function scrapeOrlandoParaBrasileiros() {
   try {
     const res = await axios.get('https://orlandoparabrasileiros.com/ingressos-parques-orlando/', {
@@ -24,7 +24,7 @@ async function scrapeOrlandoParaBrasileiros() {
     const $ = cheerio.load(res.data);
     const results = [];
 
-    // Busca preços em BRL listados na página
+    // Extract all BRL prices from the page
     const pricePattern = /R\$\s*([\d.,]+)/g;
     const pageText = $('body').text();
     const prices = [];
@@ -34,15 +34,15 @@ async function scrapeOrlandoParaBrasileiros() {
       if (price > 500 && price < 20000) prices.push(price);
     }
 
-    // Verifica promoção "4-Park Magic Ticket" (4 parques pelo preço de 3)
+    // Check if the "4-Park Magic Ticket" promo is mentioned (4 parks for the price of 3)
     const hasPromo = pageText.toLowerCase().includes('4-park magic') ||
                      pageText.toLowerCase().includes('4 parques pelo preço de 3') ||
                      pageText.toLowerCase().includes('magic disney');
-    
-    // Procura por preços específicos de 4 dias com desconto
+
+    // Look for a discounted 4-day price
     const promoMatch = pageText.match(/4.Park.*?R\$\s*([\d.,]+)/i) ||
                        pageText.match(/4 parques.*?R\$\s*([\d.,]+)/i);
-    
+
     if (promoMatch || prices.length > 0) {
       const bestPrice = promoMatch
         ? parseFloat(promoMatch[1].replace(/\./g, '').replace(',', '.'))
@@ -50,13 +50,13 @@ async function scrapeOrlandoParaBrasileiros() {
 
       results.push({
         ticket_type: hasPromo ? 'promoção' : 'avulso',
-        promotion_name: hasPromo ? '4-Park Magic Ticket (4 parques / 3 dias)' : null,
+        promotion_name: hasPromo ? '4-Park Magic Ticket (4 parks / 3 days)' : null,
         days: 4,
         price_brl: bestPrice,
-        total_brl: bestPrice * 4, // 4 pessoas
+        total_brl: bestPrice * 4, // 4 people
         num_tickets: 4,
         park_names: PARKS,
-        valid_dates: 'Jan–Fev 2027 (verificar disponibilidade)',
+        valid_dates: 'Jan–Feb 2027 (check availability)',
         source_url: 'https://orlandoparabrasileiros.com/ingressos-parques-orlando/',
         source: 'Orlando Para Brasileiros',
         has_promo: hasPromo,
@@ -64,12 +64,12 @@ async function scrapeOrlandoParaBrasileiros() {
     }
     return results;
   } catch (err) {
-    logger.warn(`Falha ao acessar Orlando Para Brasileiros: ${err.message}`);
+    logger.warn(`Failed to scrape Orlando Para Brasileiros: ${err.message}`);
     return [];
   }
 }
 
-// Fonte 2: Site oficial Disney — preços em USD convertidos
+// Source 2: Official Disney website — prices in USD converted to BRL
 async function scrapeDisneyOfficial(rate) {
   try {
     const res = await axios.get('https://disneyworld.disney.go.com/pt-br/admission/tickets/', {
@@ -81,88 +81,84 @@ async function scrapeDisneyOfficial(rate) {
     });
     const $ = cheerio.load(res.data);
     const results = [];
-
-    // Busca preços em USD ou BRL na página
     const text = $('body').text();
-    
-    // Promo vigente: "Aproveite vários Parques a partir de USD 436"
+
     const usdMatch = text.match(/USD\s*([\d,]+)/gi);
     if (usdMatch && usdMatch.length > 0) {
       const prices = usdMatch
         .map(m => parseFloat(m.replace(/[^\d.]/g, '')))
         .filter(p => p > 100 && p < 2000);
-      
+
       if (prices.length > 0) {
         const minPrice = Math.min(...prices);
         const priceBrl = minPrice * rate;
         results.push({
           ticket_type: 'promoção',
-          promotion_name: 'Ingresso Multi-Park (site oficial)',
+          promotion_name: 'Multi-Park Ticket (official website)',
           days: 4,
           price_usd: minPrice,
           price_brl: Math.round(priceBrl),
           total_brl: Math.round(priceBrl * 4),
           num_tickets: 4,
           park_names: PARKS,
-          valid_dates: 'Verificar disponibilidade no site',
+          valid_dates: 'Check availability on website',
           source_url: 'https://disneyworld.disney.go.com/pt-br/admission/tickets/',
-          source: 'Disney Oficial',
+          source: 'Disney Official',
           has_promo: true,
-          obs: 'Preço em USD + IOF (10%). Prefira comprar em BRL via revendedor.',
+          obs: 'Price in USD + 10% IOF tax. Prefer buying in BRL through a reseller.',
         });
       }
     }
     return results;
   } catch (err) {
-    logger.warn(`Falha ao acessar Disney oficial: ${err.message}`);
+    logger.warn(`Failed to scrape Disney official website: ${err.message}`);
     return [];
   }
 }
 
-// Fonte 3: Fallback com preços estimados baseados em dados históricos
+// Fallback: estimated prices based on historical data
+// Based on Jan 2026 data + ~5% estimated increase for 2027
 function getFallbackPrices(rate) {
-  // Baseado em dados de Jan 2026 + 5% de aumento estimado para 2027
-  // Fonte: pesquisa realizada em Abril/2026
-  const PRICE_USD_4DAYS_ADULT = 400; // ~média baixa temporada jan/fev
+  const PRICE_USD_4DAYS_ADULT = 400; // average low season Jan/Feb
   const priceBrl = PRICE_USD_4DAYS_ADULT * rate;
-  
+
   return [{
     ticket_type: 'estimado',
-    promotion_name: 'Estimativa baseada em dados históricos',
+    promotion_name: 'Estimate based on historical data',
     days: 4,
     price_usd: PRICE_USD_4DAYS_ADULT,
     price_brl: Math.round(priceBrl),
     total_brl: Math.round(priceBrl * 4),
     num_tickets: 4,
     park_names: PARKS,
-    valid_dates: 'Jan–Fev 2027 (baixa temporada — mais barato)',
+    valid_dates: 'Jan–Feb 2027 (low season — cheaper period)',
     source_url: 'https://disneyworld.disney.go.com/pt-br/admission/tickets/',
-    source: 'Estimativa histórica',
+    source: 'Historical estimate',
     has_promo: false,
-    obs: 'Preço estimado. Confirme no site oficial ou em orlandoparabrasileiros.com',
+    obs: 'Estimated price. Confirm on the official site or at orlandoparabrasileiros.com',
   }];
 }
 
 async function checkDisneyPrices() {
-  logger.info('🏰 Buscando preços Disney (4 parques, 4 dias, 4 pax)...');
+  logger.info('🏰 Fetching Disney prices (4 parks, 4 days, 4 people)...');
   const rate = await getUsdToBrl();
-  
+
   const [opb, official] = await Promise.all([
     scrapeOrlandoParaBrasileiros(),
     scrapeDisneyOfficial(rate),
   ]);
 
   let allResults = [...opb, ...official];
-  
+
   if (allResults.length === 0) {
-    logger.warn('Usando preços estimados Disney (scrapers falharam)');
+    logger.warn('Using estimated Disney prices (all scrapers failed)');
     allResults = getFallbackPrices(rate);
   }
 
-  // Salva no banco
+  // Save all results to database
   for (const r of allResults) {
     await db.query(`
-      INSERT INTO park_prices 
+      INSERT INTO park_prices
         (park_brand, park_names, ticket_type, promotion_name, days,
          price_usd, price_brl, num_tickets, total_brl, valid_dates, source_url)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -173,7 +169,7 @@ async function checkDisneyPrices() {
     ]);
   }
 
-  logger.info(`🏰 Disney: ${allResults.length} resultado(s) encontrado(s)`);
+  logger.info(`🏰 Disney: ${allResults.length} result(s) found`);
   return allResults;
 }
 

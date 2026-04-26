@@ -1,4 +1,4 @@
-// src/index.js — Ponto de entrada principal
+// src/index.js — Main entry point: web server + cron jobs
 require('dotenv').config();
 const cron = require('node-cron');
 const express = require('express');
@@ -13,32 +13,38 @@ const app = express();
 app.use(express.json());
 
 // ====================================================
-//  DASHBOARD WEB — http://localhost:3000
+//  WEB DASHBOARD — http://localhost:3000
 // ====================================================
 app.get('/', async (req, res) => {
   try {
-    // Últimas passagens
+    const NUM_PEOPLE = parseInt(process.env.NUM_PASSENGERS) || 4;
+
+    // Fetch cheapest flights
     const flights = await db.query(`
       SELECT * FROM flight_prices
       ORDER BY total_brl ASC, checked_at DESC
       LIMIT 20
     `);
-    // Últimos ingressos
+
+    // Fetch cheapest park tickets
     const parks = await db.query(`
       SELECT * FROM park_prices
       ORDER BY park_brand, total_brl ASC, checked_at DESC
       LIMIT 20
     `);
-    // Última cotação
+
+    // Latest exchange rate
     const rate = await db.query(`
       SELECT usd_to_brl, checked_at FROM exchange_rates
       ORDER BY checked_at DESC LIMIT 1
     `);
-    // Último check
+
+    // Last time a check ran
     const lastCheck = await db.query(`
       SELECT MAX(checked_at) as last_check FROM flight_prices
     `);
-    // Alertas enviados
+
+    // Alert history
     const alerts = await db.query(`
       SELECT * FROM price_alerts ORDER BY sent_at DESC LIMIT 10
     `);
@@ -48,19 +54,38 @@ app.get('/', async (req, res) => {
     const formatDay = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR') : '—';
 
     const flightRows = flights.rows.map(f => {
-      const dep = f.departure_date?.toISOString?.().split('T')[0] || f.departure_date;
-      const ret = f.return_date?.toISOString?.().split('T')[0] || f.return_date;
-      const link = `https://www.kayak.com.br/flights/POA-MCO/${dep?.replace(/-/g,'')}/${ret?.replace(/-/g,'')}/${CONFIG_PASSENGERS}adults`;
+      const dep = f.departure_date?.toISOString?.().split('T')[0] || String(f.departure_date || '').split('T')[0];
+      const ret = f.return_date?.toISOString?.().split('T')[0] || String(f.return_date || '').split('T')[0];
+      const depClean = (dep || '').replace(/-/g, '');
+      const retClean = (ret || '').replace(/-/g, '');
+      const n = NUM_PEOPLE;
+
+      // Parse stored links from raw_data if available
+      let links = {};
+      try { links = JSON.parse(f.raw_data || '{}').links || {}; } catch {}
+
+      const kayak   = links.kayak   || `https://www.kayak.com.br/flights/POA-MCO/${depClean}/${retClean}/${n}adults`;
+      const google  = links.google  || `https://www.google.com/travel/flights?q=Voos+POA+MCO+${dep}+volta+${ret}&hl=pt-BR`;
+      const mundi   = links.mundi   || `https://www.mundi.com.br/passagens-aereas/poa-mco/${dep}/${ret}/${n}-adultos`;
+      const decolar = links.decolar || `https://www.decolar.com/passagens-aereas/POA-MCO/${dep}/${ret}/${n}/0/0/SIM`;
+
+      const indicative = (() => { try { return JSON.parse(f.raw_data || '{}').indicative; } catch { return false; } })();
+
       return `
       <tr>
-        <td>${formatDay(f.departure_date)}</td>
-        <td>${formatDay(f.return_date)}</td>
+        <td><strong>${formatDay(f.departure_date)}</strong></td>
+        <td><strong>${formatDay(f.return_date)}</strong></td>
         <td>${f.trip_days}d</td>
         <td>${f.airline}</td>
-        <td>${f.stops === '0' ? 'Direto' : (f.stops || '1') + ' escala'}</td>
-        <td>${formatBRL(f.price_brl)}/pax</td>
+        <td>${f.stops === '0' ? '✅ Direto' : (f.stops || '1') + ' escala'}</td>
+        <td>${formatBRL(f.price_brl)}/pessoa${indicative ? '<br><span style="font-size:10px;color:#f59e0b">⚠️ preço indicativo</span>' : ''}</td>
         <td class="highlight">${formatBRL(f.total_brl)}</td>
-        <td class="small"><a href="${link}" target="_blank" style="color:#1d4ed8">Buscar →</a></td>
+        <td class="small" style="white-space:nowrap">
+          <a href="${kayak}"   target="_blank" style="color:#1d4ed8;display:block">Kayak</a>
+          <a href="${google}"  target="_blank" style="color:#1d4ed8;display:block">Google Flights</a>
+          <a href="${mundi}"   target="_blank" style="color:#1d4ed8;display:block">Mundi</a>
+          <a href="${decolar}" target="_blank" style="color:#1d4ed8;display:block">Decolar</a>
+        </td>
         <td class="small">${formatDate(f.checked_at)}</td>
       </tr>
     `}).join('');
@@ -74,9 +99,9 @@ app.get('/', async (req, res) => {
           </span>
         </td>
         <td class="small">${p.promotion_name || '—'}</td>
-        <td>${p.days}d</td>
+        <td>${p.days} dias</td>
         <td class="small">${p.valid_dates || '—'}</td>
-        <td>${formatBRL(p.price_brl)}/ing.</td>
+        <td>${formatBRL(p.price_brl)}/ingresso</td>
         <td class="highlight">${formatBRL(p.total_brl)}</td>
         <td class="small"><a href="${p.source_url || '#'}" target="_blank" style="color:#1d4ed8">Ver →</a></td>
         <td class="small">${formatDate(p.checked_at)}</td>
@@ -137,7 +162,7 @@ app.get('/', async (req, res) => {
 <body>
   <header>
     <h1>🌴 Orlando Tracker — POA → MCO, Jan/Fev 2027</h1>
-    <p>4 pessoas · 4 parques Disney · 3 parques Universal · 12–18 dias · Última atualização: ${formatDate(lastCheck.rows[0]?.last_check)}</p>
+    <p>${NUM_PEOPLE} pessoas · 4 parques Disney · 3 parques Universal · 12–18 dias · Última atualização: ${formatDate(lastCheck.rows[0]?.last_check)}</p>
   </header>
 
   <div class="stats">
@@ -150,11 +175,11 @@ app.get('/', async (req, res) => {
       <div class="value">${formatBRL(flights.rows[0]?.total_brl)}</div>
     </div>
     <div class="stat">
-      <div class="label">Mín Disney (4 pax)</div>
+      <div class="label">Mín Disney (${NUM_PEOPLE} pessoas)</div>
       <div class="value">${formatBRL(parks.rows.find(p => p.park_brand === 'disney')?.total_brl)}</div>
     </div>
     <div class="stat">
-      <div class="label">Mín Universal (4 pax)</div>
+      <div class="label">Mín Universal (${NUM_PEOPLE} pessoas)</div>
       <div class="value">${formatBRL(parks.rows.find(p => p.park_brand === 'universal')?.total_brl)}</div>
     </div>
   </div>
@@ -171,7 +196,7 @@ app.get('/', async (req, res) => {
     <h2>✈️ Passagens aéreas (mais baratas primeiro)</h2>
     ${flights.rows.length > 0 ? `
     <table>
-      <thead><tr><th>Ida</th><th>Volta</th><th>Dur.</th><th>Cia</th><th>Escalas</th><th>Por pax</th><th>Total (4 pax)</th><th>Link</th><th>Verificado em</th></tr></thead>
+      <thead><tr><th>Ida</th><th>Volta</th><th>Dur.</th><th>Companhia</th><th>Escalas</th><th>Por pessoa</th><th>Total (${NUM_PEOPLE} pessoas)</th><th>Link</th><th>Verificado em</th></tr></thead>
       <tbody>${flightRows}</tbody>
     </table>` : '<div class="empty">Ainda sem dados — execute uma verificação</div>'}
   </div>
@@ -180,7 +205,7 @@ app.get('/', async (req, res) => {
     <h2>🎡 Ingressos parques (mais baratos primeiro)</h2>
     ${parks.rows.length > 0 ? `
     <table>
-      <thead><tr><th>Marca</th><th>Tipo</th><th>Promoção</th><th>Dias</th><th>Validade</th><th>Por ingresso</th><th>Total (4 pax)</th><th>Link</th><th>Verificado em</th></tr></thead>
+      <thead><tr><th>Marca</th><th>Tipo</th><th>Promoção</th><th>Dias</th><th>Validade</th><th>Por ingresso</th><th>Total (${NUM_PEOPLE} pessoas)</th><th>Link</th><th>Verificado em</th></tr></thead>
       <tbody>${parkRows}</tbody>
     </table>` : '<div class="empty">Ainda sem dados — execute uma verificação</div>'}
   </div>
@@ -196,28 +221,28 @@ app.get('/', async (req, res) => {
 </body>
 </html>`);
   } catch (err) {
-    logger.error('Erro no dashboard:', err.message);
+    logger.error('Dashboard error:', err.message);
     res.status(500).send('Erro ao carregar dashboard. Verifique se o banco de dados está configurado.');
   }
 });
 
-// Endpoint para acionar verificação manual
+// Triggers an immediate manual check
 app.get('/run-check', async (req, res) => {
-  logger.info('🔄 Verificação manual acionada via web');
+  logger.info('🔄 Manual check triggered via web');
   res.redirect('/?check=triggered');
-  runCheck().catch(err => logger.error('Erro na verificação manual:', err.message));
+  runCheck().catch(err => logger.error('Manual check error:', err.message));
 });
 
-// Health check (para o Render não derrubar o serviço)
+// Health check endpoint — keeps Render from sleeping
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
 // ====================================================
-//  FUNÇÃO PRINCIPAL DE VERIFICAÇÃO
+//  MAIN CHECK FUNCTION
 // ====================================================
 async function runCheck() {
   logger.info('');
   logger.info('===========================================');
-  logger.info(`  VERIFICAÇÃO INICIADA — ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
+  logger.info(`  CHECK STARTED — ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
   logger.info('===========================================');
 
   const [flights, disney, universal] = await Promise.allSettled([
@@ -230,14 +255,14 @@ async function runCheck() {
   const disneyResults = disney.status === 'fulfilled' ? disney.value : [];
   const universalResults = universal.status === 'fulfilled' ? universal.value : [];
 
-  if (flights.status === 'rejected') logger.error('Passagens falhou:', flights.reason?.message);
-  if (disney.status === 'rejected') logger.error('Disney falhou:', disney.reason?.message);
-  if (universal.status === 'rejected') logger.error('Universal falhou:', universal.reason?.message);
+  if (flights.status === 'rejected') logger.error('Flights scraper failed:', flights.reason?.message);
+  if (disney.status === 'rejected') logger.error('Disney scraper failed:', disney.reason?.message);
+  if (universal.status === 'rejected') logger.error('Universal scraper failed:', universal.reason?.message);
 
   await checkAndSendAlerts(flightResults, disneyResults, universalResults);
 
   logger.info('===========================================');
-  logger.info('  VERIFICAÇÃO CONCLUÍDA');
+  logger.info('  CHECK COMPLETE');
   logger.info('===========================================');
   logger.info('');
 }
@@ -245,17 +270,17 @@ async function runCheck() {
 // ====================================================
 //  CRON JOBS
 // ====================================================
-const SCHEDULE_1 = process.env.CRON_SCHEDULE_1 || '0 10 * * *'; // 7h Brasília
-const SCHEDULE_2 = process.env.CRON_SCHEDULE_2 || '0 22 * * *'; // 19h Brasília
+const SCHEDULE_1 = process.env.CRON_SCHEDULE_1 || '0 10 * * *'; // 07:00 Brasilia time
+const SCHEDULE_2 = process.env.CRON_SCHEDULE_2 || '0 22 * * *'; // 19:00 Brasilia time
 
 cron.schedule(SCHEDULE_1, () => {
-  logger.info('⏰ Cron job 1 acionado');
-  runCheck().catch(err => logger.error('Erro no cron 1:', err.message));
+  logger.info('⏰ Cron job 1 triggered');
+  runCheck().catch(err => logger.error('Cron job 1 error:', err.message));
 }, { timezone: 'UTC' });
 
 cron.schedule(SCHEDULE_2, () => {
-  logger.info('⏰ Cron job 2 acionado');
-  runCheck().catch(err => logger.error('Erro no cron 2:', err.message));
+  logger.info('⏰ Cron job 2 triggered');
+  runCheck().catch(err => logger.error('Cron job 2 error:', err.message));
 }, { timezone: 'UTC' });
 
 // ====================================================
@@ -264,20 +289,20 @@ cron.schedule(SCHEDULE_2, () => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   logger.info('');
-  logger.info('🌴 Orlando Tracker iniciado!');
+  logger.info('🌴 Orlando Tracker started!');
   logger.info(`   Dashboard: http://localhost:${PORT}`);
   logger.info(`   Cron 1: ${SCHEDULE_1} (UTC)`);
   logger.info(`   Cron 2: ${SCHEDULE_2} (UTC)`);
-  logger.info(`   Alerta passagens: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
-  logger.info(`   Alerta Disney: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
-  logger.info(`   Alerta Universal: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
+  logger.info(`   Flight alert threshold: R$ ${process.env.FLIGHT_ALERT_THRESHOLD}`);
+  logger.info(`   Disney alert threshold: R$ ${process.env.DISNEY_ALERT_THRESHOLD}`);
+  logger.info(`   Universal alert threshold: R$ ${process.env.UNIVERSAL_ALERT_THRESHOLD}`);
   logger.info('');
 });
 
-// Executa uma vez ao iniciar (útil para primeiro teste)
+// Run once on startup — useful for first-time testing
 if (process.env.RUN_ON_START === 'true') {
   setTimeout(() => {
-    logger.info('🚀 Executando verificação inicial...');
-    runCheck().catch(err => logger.error('Erro na verificação inicial:', err.message));
+    logger.info('🚀 Running initial check...');
+    runCheck().catch(err => logger.error('Initial check error:', err.message));
   }, 5000);
 }

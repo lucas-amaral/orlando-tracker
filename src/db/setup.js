@@ -1,7 +1,7 @@
-// src/db/setup.js — Cria tabelas no Supabase/PostgreSQL
+// src/db/setup.js — Creates tables in Supabase/PostgreSQL
 require('dotenv').config();
 const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
+dns.setDefaultResultOrder('ipv4first'); // Force IPv4 — Render free tier does not support IPv6
 const { Pool } = require('pg');
 const logger = require('../utils/logger');
 
@@ -10,7 +10,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 async function setupDatabase() {
   const client = await pool.connect();
   try {
-    logger.info('Criando tabelas no banco de dados...');
+    logger.info('Creating database tables...');
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS flight_prices (
@@ -36,10 +36,10 @@ async function setupDatabase() {
       CREATE TABLE IF NOT EXISTS park_prices (
         id SERIAL PRIMARY KEY,
         checked_at TIMESTAMPTZ DEFAULT NOW(),
-        park_brand TEXT,       -- 'disney' ou 'universal'
-        park_names TEXT[],     -- ex: ARRAY['Magic Kingdom','EPCOT',...]
-        ticket_type TEXT,      -- 'avulso' ou 'promoção'
-        promotion_name TEXT,   -- ex: '4-Park Magic Ticket'
+        park_brand TEXT,
+        park_names TEXT[],
+        ticket_type TEXT,
+        promotion_name TEXT,
         days INTEGER,
         price_usd NUMERIC(10,2),
         price_brl NUMERIC(10,2),
@@ -55,7 +55,7 @@ async function setupDatabase() {
       CREATE TABLE IF NOT EXISTS price_alerts (
         id SERIAL PRIMARY KEY,
         sent_at TIMESTAMPTZ DEFAULT NOW(),
-        alert_type TEXT,       -- 'flight', 'disney', 'universal'
+        alert_type TEXT,
         threshold_brl NUMERIC(10,2),
         actual_brl NUMERIC(10,2),
         details JSONB
@@ -70,7 +70,7 @@ async function setupDatabase() {
       );
     `);
 
-    logger.info('✅ Banco de dados configurado com sucesso!');
+    logger.info('✅ Database configured successfully!');
   } finally {
     client.release();
     await pool.end();
@@ -78,6 +78,6 @@ async function setupDatabase() {
 }
 
 setupDatabase().catch(err => {
-  logger.error('Erro ao configurar banco:', err);
+  logger.error('Database setup error:', err);
   process.exit(1);
 });

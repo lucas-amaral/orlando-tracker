@@ -1,5 +1,5 @@
 // src/alerts/email.js
-// Sends price alerts through Gmail (nodemailer)
+// Sends price alert emails via Gmail using nodemailer
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 const db = require('../db/client');
@@ -20,6 +20,7 @@ function formatBRL(value) {
   }).format(value);
 }
 
+// Builds a direct Kayak link pre-filled with dates and passenger count
 function buildFlightLink(departure, returnDate, passengers) {
   const dep = departure.replace(/-/g, '');
   const ret = returnDate.replace(/-/g, '');
@@ -37,7 +38,7 @@ function buildFlightEmailHtml(flights, threshold) {
       <td style="padding:10px">${f.trip_days} dias</td>
       <td style="padding:10px">${f.airline}</td>
       <td style="padding:10px">${f.stops === '0' ? 'Direto' : (f.stops || '1') + ' escala'}</td>
-      <td style="padding:10px">${formatBRL(f.price_brl)}/pax</td>
+      <td style="padding:10px">${formatBRL(f.price_brl)}/pessoa</td>
       <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(f.total_brl)}</td>
       <td style="padding:10px"><a href="${link}" style="color:#1d4ed8;font-size:12px">Ver voo →</a></td>
     </tr>
@@ -57,10 +58,10 @@ function buildFlightEmailHtml(flights, threshold) {
               <th style="padding:10px;text-align:left">Ida</th>
               <th style="padding:10px;text-align:left">Volta</th>
               <th style="padding:10px;text-align:left">Duração</th>
-              <th style="padding:10px;text-align:left">Cia</th>
+              <th style="padding:10px;text-align:left">Companhia</th>
               <th style="padding:10px;text-align:left">Escalas</th>
               <th style="padding:10px;text-align:left">Por pessoa</th>
-              <th style="padding:10px;text-align:left">Total (4 pax)</th>
+              <th style="padding:10px;text-align:left">Total (4 pessoas)</th>
               <th style="padding:10px;text-align:left">Link</th>
             </tr>
           </thead>
@@ -122,7 +123,7 @@ function buildParkEmailHtml(parks, brand, threshold) {
               <th style="padding:10px;text-align:left">Dias</th>
               <th style="padding:10px;text-align:left">Validade</th>
               <th style="padding:10px;text-align:left">Por ingresso</th>
-              <th style="padding:10px;text-align:left">Total (4 pax)</th>
+              <th style="padding:10px;text-align:left">Total (4 pessoas)</th>
               <th style="padding:10px;text-align:left">Link</th>
             </tr>
           </thead>
@@ -146,7 +147,7 @@ async function checkAndSendAlerts(flightResults, disneyResults, universalResults
 
   const alertsToSend = [];
 
-  // Verifica passagens
+  // Check flights
   const cheapFlights = flightResults.filter(f => f.total_brl < flightThreshold);
   if (cheapFlights.length > 0) {
     alertsToSend.push({
@@ -158,31 +159,31 @@ async function checkAndSendAlerts(flightResults, disneyResults, universalResults
     });
   }
 
-  // Verifica Disney
+  // Check Disney tickets
   const cheapDisney = disneyResults.filter(d => d.total_brl < disneyThreshold);
   if (cheapDisney.length > 0) {
     alertsToSend.push({
       type: 'disney',
-      subject: `🏰 ALERTA: Ingressos Disney abaixo de ${formatBRL(disneyThreshold)}! (4 pax, 4 parques)`,
+      subject: `🏰 ALERTA: Ingressos Disney abaixo de ${formatBRL(disneyThreshold)}! (4 pessoas, 4 parques)`,
       html: buildParkEmailHtml(cheapDisney, 'disney', disneyThreshold),
       threshold: disneyThreshold,
       actual: Math.min(...cheapDisney.map(d => d.total_brl)),
     });
   }
 
-  // Verifica Universal
+  // Check Universal tickets
   const cheapUniversal = universalResults.filter(u => u.total_brl < universalThreshold);
   if (cheapUniversal.length > 0) {
     alertsToSend.push({
       type: 'universal',
-      subject: `🎬 ALERTA: Ingressos Universal abaixo de ${formatBRL(universalThreshold)}! (4 pax, 3 parques)`,
+      subject: `🎬 ALERTA: Ingressos Universal abaixo de ${formatBRL(universalThreshold)}! (4 pessoas, 3 parques)`,
       html: buildParkEmailHtml(cheapUniversal, 'universal', universalThreshold),
       threshold: universalThreshold,
       actual: Math.min(...cheapUniversal.map(u => u.total_brl)),
     });
   }
 
-  // Envia emails
+  // Send all pending alerts
   for (const alert of alertsToSend) {
     try {
       await transporter.sendMail({
@@ -191,23 +192,23 @@ async function checkAndSendAlerts(flightResults, disneyResults, universalResults
         subject: alert.subject,
         html: alert.html,
       });
-      
-      // Registra no banco
+
+      // Log the alert in the database
       await db.query(
         'INSERT INTO price_alerts (alert_type, threshold_brl, actual_brl) VALUES ($1,$2,$3)',
         [alert.type, alert.threshold, alert.actual]
       );
-      
-      logger.info(`📧 Email de alerta enviado: ${alert.type}`);
+
+      logger.info(`📧 Alert email sent: ${alert.type}`);
     } catch (err) {
-      logger.error(`Falha ao enviar email de alerta (${alert.type}): ${err.message}`);
+      logger.error(`Failed to send alert email (${alert.type}): ${err.message}`);
     }
   }
 
   if (alertsToSend.length === 0) {
-    logger.info('📧 Nenhum alerta disparado — preços acima dos limites configurados');
+    logger.info('📧 No alerts triggered — all prices above configured thresholds');
   }
-  
+
   return alertsToSend.length;
 }
 
