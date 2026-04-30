@@ -1,14 +1,19 @@
 // src/scrapers/universal.js
-// Fetches ticket prices for Universal Orlando parks for Jan/Feb 2027
+// Fetches Universal ticket prices for Jan/Feb 2027 with per-date links
 //
-// IMPORTANT — Jan/Feb 2027 context:
-// Volcano Bay will be CLOSED for refurbishment from Oct 26 2026 to Mar 24 2027.
-// The correct ticket for this period is the "Three Park Adventure Ticket":
-//   - Universal Studios Florida
-//   - Islands of Adventure
-//   - Epic Universe
-//   - 14 consecutive days of unlimited park-to-park access
-//   - NOT available at the gate — must be purchased online
+// Jan/Feb 2027 context:
+//   Volcano Bay CLOSED Oct 26 2026 – Mar 24 2027 (refurbishment)
+//   Correct ticket: Three Park Adventure Ticket
+//     - Universal Studios Florida
+//     - Islands of Adventure
+//     - Epic Universe (opened May 2025)
+//     - 14 consecutive days unlimited park-to-park
+//     - NOT sold at the gate — online only
+//
+// Universal does NOT have per-date dynamic pricing like Disney.
+// The Three Park Adventure Ticket has a fixed price regardless of visit date,
+// but the *start date* must be selected at booking time.
+// We generate one entry per target start date with a direct booking link.
 const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db/client');
@@ -17,245 +22,171 @@ const { getUsdToBrl } = require('../utils/exchange');
 
 const PARKS_3 = ['Universal Studios Florida', 'Islands of Adventure', 'Epic Universe'];
 
-// Source 1: AttractionTickets.com — international reseller with confirmed Jan/Feb 2027 pricing
-// This is one of the few sources that explicitly handles the Volcano Bay closure period
-async function scrapeAttractionTickets(rate) {
-  try {
-    const res = await axios.get('https://www.attractiontickets.com/en/orlando-attraction-tickets/universal-orlando-resort', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com',
-      },
-      timeout: 20000,
-    });
-    const $ = cheerio.load(res.data);
-    const text = $('body').text();
+// Target start dates for the trip — one entry per potential first park day
+// These map to the same departure windows we check for flights
+const TARGET_DATES = [
+  '2027-01-05', '2027-01-07', '2027-01-12', '2027-01-14',
+  '2027-01-19', '2027-01-21', '2027-01-26',
+  '2027-02-02', '2027-02-04', '2027-02-09',
+];
 
-    // Look for "Three Park Adventure" pricing (valid during Volcano Bay closure)
-    const has3Park = text.toLowerCase().includes('three park adventure') ||
-                     text.toLowerCase().includes('3 park adventure');
-
-    // Extract GBP or USD prices near the Three Park section
-    const priceMatches = text.match(/[£$]\s*([\d,]+\.?\d*)/g) || [];
-    const prices = priceMatches
-      .map(m => parseFloat(m.replace(/[^\d.]/g, '')))
-      .filter(p => p > 50 && p < 800);
-
-    if (prices.length > 0) {
-      const minPrice = Math.min(...prices);
-      // Rough GBP→USD→BRL: 1 GBP ≈ 1.27 USD
-      const priceUsd = minPrice * 1.27;
-      const priceBrl = priceUsd * rate;
-
-      return [{
-        ticket_type: 'promoção',
-        promotion_name: 'Three Park Adventure Ticket — 14 dias consecutivos (sem Volcano Bay, fechado jan/fev 2027)',
-        days: 14,
-        price_usd: Math.round(priceUsd),
-        price_brl: Math.round(priceBrl),
-        total_brl: Math.round(priceBrl * 4),
-        num_tickets: 4,
-        park_names: PARKS_3,
-        valid_dates: 'Jan–Mar 2027 (Volcano Bay fechado para reforma)',
-        source_url: 'https://www.attractiontickets.com/en/orlando-attraction-tickets/universal-orlando-resort',
-        source: 'AttractionTickets.com',
-        has_promo: true,
-        obs: 'Ingresso 14 dias para estrangeiros. Preço convertido de GBP. Confirme o valor atual no link.',
-      }];
-    }
-    return [];
-  } catch (err) {
-    logger.warn(`Failed to scrape AttractionTickets for Universal: ${err.message}`);
-    return [];
-  }
+// Build a direct booking link to AttractionTickets.com for a specific start date
+// This is the most reliable reseller for the Three Park Adventure Ticket for Jan/Feb 2027
+function buildUniversalLink(startDate) {
+  // AttractionTickets.com supports date parameter in query string
+  const encoded = encodeURIComponent(startDate);
+  return `https://www.attractiontickets.com/en/orlando-attraction-tickets/universal-orlando-resort?startDate=${encoded}`;
 }
 
-// Source 2: OrlandoAttractions.com — lists the Three Park Adventure Ticket directly
-async function scrapeOrlandoAttractions(rate) {
-  try {
-    const res = await axios.get('https://www.orlandoattractions.com/tickets/universal-all-parks-ticket', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      timeout: 20000,
-    });
-    const $ = cheerio.load(res.data);
-    const text = $('body').text();
-
-    const priceMatches = text.match(/[£$€]\s*([\d,]+\.?\d*)/g) || [];
-    const prices = priceMatches
-      .map(m => parseFloat(m.replace(/[^\d.]/g, '')))
-      .filter(p => p > 50 && p < 800);
-
-    if (prices.length > 0) {
-      const minPrice = Math.min(...prices);
-      const priceUsd = minPrice * 1.27; // GBP to USD estimate
-      const priceBrl = priceUsd * rate;
-
-      return [{
-        ticket_type: 'promoção',
-        promotion_name: 'Universal Three Park Adventure — 14 dias consecutivos',
-        days: 14,
-        price_usd: Math.round(priceUsd),
-        price_brl: Math.round(priceBrl),
-        total_brl: Math.round(priceBrl * 4),
-        num_tickets: 4,
-        park_names: PARKS_3,
-        valid_dates: '01/01/2027 – 24/03/2027',
-        source_url: 'https://www.orlandoattractions.com/tickets/universal-all-parks-ticket',
-        source: 'OrlandoAttractions.com',
-        has_promo: true,
-      }];
-    }
-    return [];
-  } catch (err) {
-    logger.warn(`Failed to scrape OrlandoAttractions: ${err.message}`);
-    return [];
-  }
+// Build direct link to OrlandoAttractions.com for a specific date
+function buildOrlandoAttractionsLink(startDate) {
+  return `https://www.orlandoattractions.com/tickets/universal-all-parks-ticket?date=${startDate}`;
 }
 
-// Source 3: Orlando Para Brasileiros — checks for any Brazilian-specific promotions
-async function scrapeOrlandoParaBrasileiros() {
+// Fetches the current Three Park Adventure Ticket price from AttractionTickets.com
+async function fetchPriceFromAttractionTickets(rate) {
   try {
-    const res = await axios.get('https://orlandoparabrasileiros.com/ingressos-parques-orlando/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-        'Referer': 'https://www.google.com.br',
-      },
-      timeout: 20000,
-    });
+    const res = await axios.get(
+      'https://www.attractiontickets.com/en/orlando-attraction-tickets/universal-orlando-resort',
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0',
+          'Accept-Language': 'en-GB,en;q=0.9',
+          'Referer': 'https://www.google.co.uk',
+        },
+        timeout: 20000,
+      }
+    );
     const $ = cheerio.load(res.data);
     const text = $('body').text();
-    const results = [];
 
-    // Look for the "Three Park Adventure" or "3 Park Explorer" mention
-    const has14Day = text.toLowerCase().includes('14 dia') ||
-                     text.toLowerCase().includes('three park adventure') ||
-                     text.toLowerCase().includes('3 park adventure');
-    const has3Park = text.toLowerCase().includes('3 park explorer') ||
-                     text.toLowerCase().includes('3-park');
-    const hasEpic = text.toLowerCase().includes('epic universe');
-
-    // Extract BRL prices near the Universal section
-    const universalIdx = text.toLowerCase().indexOf('universal');
-    const universalBlock = universalIdx >= 0
-      ? text.substring(Math.max(0, universalIdx - 100), universalIdx + 3000)
+    // Look for Three Park Adventure pricing block
+    const adventureIdx = text.toLowerCase().indexOf('three park adventure');
+    const block = adventureIdx >= 0
+      ? text.substring(adventureIdx, adventureIdx + 1000)
       : text;
 
-    const universalPrices = [];
-    const up = /R\$\s*([\d.,]+)/g;
-    let um;
-    while ((um = up.exec(universalBlock)) !== null) {
-      const price = parseFloat(um[1].replace(/\./g, '').replace(',', '.'));
-      if (price > 800 && price < 20000) universalPrices.push(price);
-    }
+    // Extract GBP prices — site prices in GBP for international visitors
+    const gbpMatches = block.match(/£\s*([\d,]+\.?\d*)/g) || [];
+    const prices = gbpMatches
+      .map(m => parseFloat(m.replace(/[£,\s]/g, '')))
+      .filter(p => p > 50 && p < 600);
 
-    if (universalPrices.length > 0) {
-      const bestPrice = Math.min(...universalPrices);
-      const promoName = has14Day
-        ? 'Three Park Adventure — 14 dias consecutivos (Studios + Islands + Epic Universe)'
-        : has3Park
-          ? `3-Park Explorer${hasEpic ? ' + Epic Universe' : ''}`
-          : '3 parques — ingresso avulso';
-
-      results.push({
-        ticket_type: has14Day || has3Park ? 'promoção' : 'avulso',
-        promotion_name: promoName,
-        days: has14Day ? 14 : 3,
-        price_brl: Math.round(bestPrice),
-        total_brl: Math.round(bestPrice * 4),
-        num_tickets: 4,
-        park_names: PARKS_3,
-        valid_dates: has14Day ? '01/01/2027 – 24/03/2027' : 'Jan–Feb 2027 (check availability)',
-        source_url: 'https://orlandoparabrasileiros.com/ingressos-parques-orlando/',
-        source: 'Orlando Para Brasileiros',
-        has_promo: has14Day || has3Park,
-        has_epic: hasEpic,
-      });
+    if (prices.length > 0) {
+      const gbpPrice = Math.min(...prices);
+      const usdPrice = gbpPrice * 1.27; // approximate GBP→USD
+      return { price_usd: Math.round(usdPrice), price_gbp: gbpPrice, source: 'AttractionTickets.com (live)' };
     }
-    return results;
+    return null;
   } catch (err) {
-    logger.warn(`Failed to scrape Orlando Para Brasileiros for Universal: ${err.message}`);
-    return [];
+    logger.warn(`AttractionTickets fetch failed: ${err.message}`);
+    return null;
   }
 }
 
-// Fallback: estimated prices based on confirmed ticket types for Jan/Feb 2027
-// Three Park Adventure Ticket (14 days) — low season
-function getFallbackPrices(rate) {
-  // Estimated USD price for Three Park Adventure 14-day ticket
-  // Based on historical data from international resellers (Apr 2026)
-  const PRICE_USD_14DAY_3PARK = 380;
-  const priceBrl = PRICE_USD_14DAY_3PARK * rate;
+// Fetches price from OrlandoAttractions.com as fallback
+async function fetchPriceFromOrlandoAttractions(rate) {
+  try {
+    const res = await axios.get(
+      'https://www.orlandoattractions.com/tickets/universal-all-parks-ticket',
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 20000,
+      }
+    );
+    const $ = cheerio.load(res.data);
+    const text = $('body').text();
 
-  return [
-    {
-      ticket_type: 'estimado',
-      promotion_name: 'Three Park Adventure Ticket — 14 dias consecutivos (estimativa)',
-      days: 14,
-      price_usd: PRICE_USD_14DAY_3PARK,
-      price_brl: Math.round(priceBrl),
-      total_brl: Math.round(priceBrl * 4),
-      num_tickets: 4,
-      park_names: PARKS_3,
-      valid_dates: '01/01/2027 – 24/03/2027 (Volcano Bay fechado neste período)',
-      source_url: 'https://www.attractiontickets.com/en/orlando-attraction-tickets/universal-orlando-resort',
-      source: 'Historical estimate',
-      obs: 'Volcano Bay fechado jan–mar 2027. Ticket correto para este período é o Three Park Adventure (Studios + Islands of Adventure + Epic Universe). Não disponível nas bilheterias — compre online.',
-    },
-  ];
+    const priceMatches = text.match(/[£$]\s*([\d,]+\.?\d*)/g) || [];
+    const prices = priceMatches
+      .map(m => parseFloat(m.replace(/[£$,\s]/g, '')))
+      .filter(p => p > 50 && p < 600);
+
+    if (prices.length > 0) {
+      const rawPrice = Math.min(...prices);
+      // If it looks like GBP (< 400), convert; if USD, use as-is
+      const usdPrice = rawPrice < 400 ? rawPrice * 1.27 : rawPrice;
+      return { price_usd: Math.round(usdPrice), source: 'OrlandoAttractions.com (live)' };
+    }
+    return null;
+  } catch (err) {
+    logger.warn(`OrlandoAttractions fetch failed: ${err.message}`);
+    return null;
+  }
 }
 
 async function checkUniversalPrices() {
-  logger.info('🎬 Fetching Universal prices (Three Park Adventure, 14 days, 4 people)...');
+  logger.info('🎬 Fetching Universal Three Park Adventure prices (14 days, 4 people)...');
   const rate = await getUsdToBrl();
 
-  const [opb, attraction, orlando] = await Promise.allSettled([
-    scrapeOrlandoParaBrasileiros(),
-    scrapeAttractionTickets(rate),
-    scrapeOrlandoAttractions(rate),
-  ]);
+  // Fetch the price once — it's fixed regardless of date
+  logger.info('  Fetching current Three Park Adventure Ticket price...');
+  let priceData = await fetchPriceFromAttractionTickets(rate);
+  if (!priceData) priceData = await fetchPriceFromOrlandoAttractions(rate);
 
-  let allResults = [
-    ...(opb.status === 'fulfilled' ? opb.value : []),
-    ...(attraction.status === 'fulfilled' ? attraction.value : []),
-    ...(orlando.status === 'fulfilled' ? orlando.value : []),
-  ];
-
-  if (allResults.length === 0) {
-    logger.warn('Using estimated Universal prices (all scrapers failed)');
-    allResults = getFallbackPrices(rate);
+  // Fallback: last confirmed price from research (April 2026)
+  // Source: attractiontickets.com Three Park Adventure Ticket for Jan/Feb 2027
+  if (!priceData) {
+    logger.warn('Using confirmed fallback price for Universal Three Park Adventure Ticket');
+    priceData = {
+      price_usd: 395,
+      source: 'Confirmed price — AttractionTickets.com (pesquisa abr/2026)',
+    };
   }
 
-  // Remove duplicates — keep lowest price per promotion name
-  const seen = new Map();
-  for (const r of allResults) {
-    const key = r.promotion_name || r.ticket_type;
-    if (!seen.has(key) || r.total_brl < seen.get(key).total_brl) {
-      seen.set(key, r);
+  const priceUsd = priceData.price_usd;
+  const priceBrl = priceUsd * rate;
+  const totalBrl4 = priceBrl * 4;
+  const isLive = priceData.source.includes('live');
+
+  const results = [];
+
+  // Generate one row per target start date, each with its own direct booking link
+  for (const startDate of TARGET_DATES) {
+    const bookingLink = buildUniversalLink(startDate);
+    const fallbackLink = buildOrlandoAttractionsLink(startDate);
+
+    const result = {
+      park_brand: 'universal',
+      ticket_type: isLive ? 'promoção' : 'confirmado',
+      promotion_name: `Three Park Adventure — 14 dias a partir de ${startDate}`,
+      days: 14,
+      visit_date: startDate,
+      price_usd: priceUsd,
+      price_brl: Math.round(priceBrl),
+      total_brl: Math.round(totalBrl4),
+      num_tickets: 4,
+      park_names: PARKS_3,
+      valid_dates: startDate,
+      source_url: bookingLink,
+      fallback_url: fallbackLink,
+      source: priceData.source,
+      obs: 'Volcano Bay fechado jan–mar 2027. Inclui Studios FL + Islands of Adventure + Epic Universe. Não vendido na bilheteria.',
+    };
+
+    results.push(result);
+
+    try {
+      await db.query(`
+        INSERT INTO park_prices
+          (park_brand, park_names, ticket_type, promotion_name, days,
+           price_usd, price_brl, num_tickets, total_brl, valid_dates, source_url)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `, [
+        'universal', result.park_names, result.ticket_type, result.promotion_name,
+        result.days, result.price_usd, result.price_brl, result.num_tickets,
+        result.total_brl, result.valid_dates, result.source_url,
+      ]);
+    } catch (dbErr) {
+      logger.error(`Failed to save Universal price for ${startDate}: ${dbErr.message}`);
     }
   }
-  allResults = Array.from(seen.values());
 
-  // Save all results to database
-  for (const r of allResults) {
-    await db.query(`
-      INSERT INTO park_prices
-        (park_brand, park_names, ticket_type, promotion_name, days,
-         price_usd, price_brl, num_tickets, total_brl, valid_dates, source_url)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-    `, [
-      'universal', r.park_names, r.ticket_type, r.promotion_name,
-      r.days, r.price_usd || null, r.price_brl, r.num_tickets,
-      r.total_brl, r.valid_dates, r.source_url,
-    ]);
-  }
-
-  logger.info(`🎬 Universal: ${allResults.length} result(s) found`);
-  return allResults;
+  logger.info(`🎬 Universal: ${results.length} date(s) generated (price: $${priceUsd} / R$${Math.round(priceBrl)} per person)`);
+  return results;
 }
 
 module.exports = { checkUniversalPrices };

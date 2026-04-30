@@ -20,27 +20,31 @@ function formatBRL(value) {
   }).format(value);
 }
 
-// Builds a direct Kayak link pre-filled with dates and passenger count
-function buildFlightLink(departure, returnDate, passengers) {
-  const dep = departure.replace(/-/g, '');
-  const ret = returnDate.replace(/-/g, '');
-  return `https://www.kayak.com.br/flights/POA-MCO/${dep}/${ret}/${passengers}adults`;
-}
-
 function buildFlightEmailHtml(flights, threshold) {
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const rows = flights.map(f => {
-    const link = buildFlightLink(f.departure_date, f.return_date, f.num_passengers || 4);
+    let googleUrl = f.source_url || '';
+    try {
+      const raw = JSON.parse(f.raw_data || '{}');
+      if (raw.google_flights_url) googleUrl = raw.google_flights_url;
+    } catch {}
+    if (!googleUrl) {
+      googleUrl = `https://www.google.com/travel/flights?hl=pt-BR&curr=BRL#flt=POA.MCO.${f.departure_date}*MCO.POA.${f.return_date};c:BRL;e:1;sd:1;t:f`;
+    }
     return `
     <tr style="border-bottom:1px solid #eee">
-      <td style="padding:10px">${f.departure_date}</td>
-      <td style="padding:10px">${f.return_date}</td>
+      <td style="padding:10px"><strong>${f.departure_date}</strong></td>
+      <td style="padding:10px"><strong>${f.return_date}</strong></td>
       <td style="padding:10px">${f.trip_days} dias</td>
       <td style="padding:10px">${f.airline}</td>
-      <td style="padding:10px">${f.stops === '0' ? 'Direto' : (f.stops || '1') + ' escala'}</td>
+      <td style="padding:10px">${f.stops === '0' ? '✅ Direto' : (f.stops || '1') + ' escala(s)'}</td>
       <td style="padding:10px">${formatBRL(f.price_brl)}/pessoa</td>
       <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(f.total_brl)}</td>
-      <td style="padding:10px"><a href="${link}" style="color:#1d4ed8;font-size:12px">Ver voo →</a></td>
+      <td style="padding:10px">
+        <a href="${googleUrl}" style="color:#1d4ed8;font-size:12px;font-weight:600">
+          Ver no Google Flights →
+        </a>
+      </td>
     </tr>
   `}).join('');
 
@@ -88,23 +92,27 @@ function buildParkEmailHtml(parks, brand, threshold) {
     ? 'https://disneyworld.disney.go.com/pt-br/admission/tickets/'
     : 'https://www.universalorlando.com/web/en/us/tickets';
 
-  const rows = parks.map(p => `
+  const rows = parks.map(p => {
+    const visitDate = p.valid_dates && p.valid_dates.match(/^\d{4}-\d{2}-\d{2}$/)
+      ? new Date(p.valid_dates + 'T12:00:00Z').toLocaleDateString('pt-BR')
+      : (p.valid_dates || '—');
+    return `
     <tr style="border-bottom:1px solid #eee">
+      <td style="padding:10px;font-weight:600">${visitDate}</td>
       <td style="padding:10px">${p.park_names?.join(', ') || brandName}</td>
       <td style="padding:10px">
-        <span style="background:${p.ticket_type === 'promoção' ? '#dcfce7' : p.ticket_type === 'estimado' ? '#fef9c3' : '#eff6ff'};
+        <span style="background:${p.ticket_type === 'promoção' || p.ticket_type === 'confirmado' ? '#dcfce7' : p.ticket_type === 'estimado' ? '#fef9c3' : '#eff6ff'};
           padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600">
-          ${p.ticket_type === 'promoção' ? '🎉 ' : ''}${p.ticket_type}
+          ${p.ticket_type === 'promoção' || p.ticket_type === 'confirmado' ? '✅ ' : ''}${p.ticket_type}
         </span>
       </td>
       <td style="padding:10px;font-size:12px">${p.promotion_name || '—'}</td>
       <td style="padding:10px">${p.days} dias</td>
-      <td style="padding:10px">${p.valid_dates || '—'}</td>
-      <td style="padding:10px">${formatBRL(p.price_brl)}/ingresso</td>
+      <td style="padding:10px">${formatBRL(p.price_brl)}/pessoa</td>
       <td style="padding:10px;font-weight:bold;color:#16a34a">${formatBRL(p.total_brl)}</td>
-      <td style="padding:10px"><a href="${p.source_url || officialLink}" style="color:#1d4ed8;font-size:12px">Ver →</a></td>
+      <td style="padding:10px"><a href="${p.source_url || officialLink}" style="color:#1d4ed8;font-size:12px;font-weight:600">Comprar →</a></td>
     </tr>
-  `).join('');
+  `}).join('');
 
   return `
     <div style="font-family:sans-serif;max-width:800px;margin:0 auto">
@@ -117,14 +125,14 @@ function buildParkEmailHtml(parks, brand, threshold) {
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#e2e8f0">
+              <th style="padding:10px;text-align:left">Data visita</th>
               <th style="padding:10px;text-align:left">Parques</th>
               <th style="padding:10px;text-align:left">Tipo</th>
-              <th style="padding:10px;text-align:left">Promoção</th>
+              <th style="padding:10px;text-align:left">Produto</th>
               <th style="padding:10px;text-align:left">Dias</th>
-              <th style="padding:10px;text-align:left">Validade</th>
-              <th style="padding:10px;text-align:left">Por ingresso</th>
+              <th style="padding:10px;text-align:left">Por pessoa</th>
               <th style="padding:10px;text-align:left">Total (4 pessoas)</th>
-              <th style="padding:10px;text-align:left">Link</th>
+              <th style="padding:10px;text-align:left">Comprar</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
